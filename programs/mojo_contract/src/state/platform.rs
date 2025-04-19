@@ -1,0 +1,10 @@
+use anchor_lang::prelude::*;
+
+#[account]
+#[derive(InitSpace)]
+pub struct PlatformState {  
+    pub base_token_mint: Pubkey, // MOJO mint address  
+    pub admin: Pubkey,           // Platform admin  
+    pub fee_collector: Pubkey,   // Fee destination  
+    pub is_paused: bool,         // Emergency stop  
+}  

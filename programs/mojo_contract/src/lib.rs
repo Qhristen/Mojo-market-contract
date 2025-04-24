@@ -27,4 +27,15 @@ pub mod mojo_contract {
         ctx.accounts
             .initialize_platform(protocol_fee_rate, &ctx.bumps)
     }
+
+    pub fn create_pair(
+        ctx: Context<CreatePair>,
+        pair_name: String,
+        fee_rate: u16,
+        protocol_fee_rate: u16,
+    ) -> Result<()> {
+        ctx.accounts
+            .create_pair(pair_name, fee_rate, protocol_fee_rate, ctx.bumps.pair)?;
+        Ok(())
+    }
 }

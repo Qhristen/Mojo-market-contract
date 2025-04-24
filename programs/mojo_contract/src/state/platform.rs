@@ -7,4 +7,6 @@ pub struct PlatformState {
     pub admin: Pubkey,           // Platform admin  
     pub fee_collector: Pubkey,   // Fee destination  
     pub is_paused: bool,         // Emergency stop  
+    pub protocol_fee_rate: u16,
+    pub bump: u8,
 }  

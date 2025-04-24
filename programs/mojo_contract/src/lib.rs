@@ -16,7 +16,10 @@ pub mod mojo_contract {
     use super::*;
 
     pub fn initialize(_ctx: Context<Initialize>) -> Result<()> {
-    
-    Ok(())
+        Ok(())
+    }
+    pub fn swap(ctx: Context<Swap>, input_amount: u64, min_output_amount: u64) -> Result<()> {
+        ctx.accounts.swap(input_amount, min_output_amount)?;
+        Ok(())
     }
 }

@@ -16,4 +16,13 @@ pub enum AmmError {
     InvalidPair,
     #[msg("Invalid fee configuration")]
     InvalidFeeConfig,
+
+    #[msg("Fee rate cannot exceed 10%")]
+    FeeTooHigh,
+    #[msg("Protocol fee rate cannot exceed 2%")]
+    ProtocolFeeTooHigh,
+    #[msg("Base token must be the platform's base token (MOJO)")]
+    InvalidBaseToken,
+    #[msg("Invalid paired token")]
+    InvalidPairedToken,
 }

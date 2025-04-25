@@ -15,11 +15,16 @@ declare_id!("HrEj3FFzTt965KGmU4krw1y7oeS1QUSA468Pkw7S2cgM");
 pub mod mojo_contract {
     use super::*;
 
-    pub fn initialize(_ctx: Context<Initialize>) -> Result<()> {
-        Ok(())
-    }
     pub fn swap(ctx: Context<Swap>, input_amount: u64, min_output_amount: u64) -> Result<()> {
         ctx.accounts.swap(input_amount, min_output_amount)?;
         Ok(())
+    }
+
+    pub fn initialize_platform(
+        ctx: Context<InitializePlatform>,
+        protocol_fee_rate: u16,
+    ) -> Result<()> {
+        ctx.accounts
+            .initialize_platform(protocol_fee_rate, &ctx.bumps)
     }
 }

@@ -25,4 +25,13 @@ pub enum AmmError {
     InvalidBaseToken,
     #[msg("Invalid paired token")]
     InvalidPairedToken,
+
+    #[msg("Unauthorized access")]
+    Unauthorized,
+    #[msg("Platform is already paused")]
+    AlreadyPaused,
+    #[msg("Platform is not paused")]
+    NotPaused,
+    #[msg("Invalid pause transition")]
+    InvalidPauseState,
 }

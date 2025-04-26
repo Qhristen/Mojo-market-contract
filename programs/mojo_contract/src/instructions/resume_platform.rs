@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use crate::{error::AmmError, state::PlatformState};
 
 #[derive(Accounts)]
-pub struct PausePlatform<'info> {
+pub struct ResumePlatform<'info> {
     #[account(constraint = admin.key() == platform_state.admin @ AmmError::Unauthorized)]
     pub admin: Signer<'info>,
 
@@ -13,8 +13,8 @@ pub struct PausePlatform<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> PausePlatform<'info> {
-    pub fn pause_platform(&mut self) -> Result<()> {
+impl<'info> ResumePlatform<'info> {
+    pub fn resume_platform(&mut self) -> Result<()> {
         self.platform_state.is_paused = true;
         Ok(())
     }    

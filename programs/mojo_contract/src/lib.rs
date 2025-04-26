@@ -1,9 +1,9 @@
+use anchor_lang::prelude::*;
+
 pub mod constants;
 pub mod error;
 pub mod instructions;
 pub mod state;
-
-use anchor_lang::prelude::*;
 
 pub use constants::*;
 pub use instructions::*;
@@ -36,6 +36,30 @@ pub mod mojo_contract {
     ) -> Result<()> {
         ctx.accounts
             .create_pair(pair_name, fee_rate, protocol_fee_rate, ctx.bumps.pair)?;
+        Ok(())
+    }
+
+    pub fn pause_plaform(
+        ctx: Context<PausePlatform>,
+    ) -> Result<()> {
+        ctx.accounts.pause_platform();
+        
+        Ok(())
+    }
+
+    pub fn resume_plaform(
+        ctx: Context<ResumePlatform>,
+    ) -> Result<()> {
+        ctx.accounts.resume_platform();
+        
+        Ok(())
+    }
+
+    pub fn update_fee_rate(
+        ctx: Context<UpdateFeeRate>,
+        new_fee_rate: u16,
+    ) -> Result<()> {
+        ctx.accounts.update_fee_rate(new_fee_rate)?;
         Ok(())
     }
 }

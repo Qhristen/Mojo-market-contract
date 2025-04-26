@@ -25,4 +25,7 @@ pub enum AmmError {
     InvalidBaseToken,
     #[msg("Invalid paired token")]
     InvalidPairedToken,
+
+    #[msg("Un")]
+    Unauthorized
 }

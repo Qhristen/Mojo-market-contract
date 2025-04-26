@@ -6,6 +6,7 @@ pub mod swap;
 pub mod collect_fees;
 pub mod pause_plaform;
 pub mod update_fee_rate;
+pub mod resume_platform;
 
 pub use initialize_platform::*;
 pub use add_liquidity::*;
@@ -15,3 +16,4 @@ pub use swap::*;
 pub use collect_fees::*;
 pub use pause_plaform::*;
 pub use update_fee_rate::*;
+pub use resume_platform::*;

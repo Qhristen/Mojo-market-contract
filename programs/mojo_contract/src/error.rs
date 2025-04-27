@@ -26,6 +26,10 @@ pub enum AmmError {
     #[msg("Invalid paired token")]
     InvalidPairedToken,
 
-    #[msg("Un")]
-    Unauthorized
+    #[msg("Unauthorized access")]
+    Unauthorized,
+    #[msg("Token mint mismatch")]
+    TokenMintMismatch,
+    #[msg("Invalid amount")]
+    InvalidAmount
 }

@@ -62,4 +62,12 @@ pub mod mojo_contract {
         ctx.accounts.update_fee_rate(new_fee_rate)?;
         Ok(())
     }
+
+    pub fn withdraw_platform_fees(
+        ctx: Context<WithdrawPlatformFees>,
+        amount: u64,
+    ) -> Result<()> {
+        ctx.accounts.withdraw_fees(amount)?;
+        Ok(())
+    }
 }

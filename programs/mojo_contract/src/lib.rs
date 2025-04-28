@@ -28,6 +28,11 @@ pub mod mojo_contract {
             .initialize_platform(protocol_fee_rate, &ctx.bumps)
     }
 
+    pub fn pause_platform(ctx: Context<PausePlatform>, pause: bool) -> Result<()> {
+        ctx.accounts.pause_platform(pause)?;
+        Ok(())
+    }
+
     pub fn create_pair(
         ctx: Context<CreatePair>,
         pair_name: String,

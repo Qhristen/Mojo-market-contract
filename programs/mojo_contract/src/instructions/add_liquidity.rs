@@ -1,6 +1,7 @@
 use crate::{error::AmmError, state::Pair};
 use anchor_lang::prelude::*;
 use anchor_spl::{
+    associated_token::AssociatedToken,
     token::{mint_to, transfer, MintTo, Transfer},
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
@@ -25,7 +26,7 @@ pub struct AddLiquidity<'info> {
 
     /// Vault holding base token (MOJO)
     #[account(mut, address = pair.base_vault)]
-    pub base_vault: InterfaceAccount<'info, TokenAccount>,
+    pub base_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// User's base token ATA
     #[account(
@@ -33,11 +34,11 @@ pub struct AddLiquidity<'info> {
         associated_token::mint = pair.base_token_mint,
         associated_token::authority = user,
     )]
-    pub user_base_ata: InterfaceAccount<'info, TokenAccount>,
+    pub user_base_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// Vault holding paired token
     #[account(mut, address = pair.paired_vault)]
-    pub paired_vault: InterfaceAccount<'info, TokenAccount>,
+    pub paired_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// User's paired token ATA
     #[account(
@@ -45,7 +46,7 @@ pub struct AddLiquidity<'info> {
         associated_token::mint = pair.paired_token_mint,
         associated_token::authority = user,
     )]
-    pub user_paired_ata: InterfaceAccount<'info, TokenAccount>,
+    pub user_paired_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// LP token mint for this pool
     #[account(mut, address = pair.lp_mint)]
@@ -57,9 +58,11 @@ pub struct AddLiquidity<'info> {
         associated_token::mint = pair.lp_mint,
         associated_token::authority = user,
     )]
-    pub user_lp_ata: InterfaceAccount<'info, TokenAccount>,
+    pub user_lp_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// Token program
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 

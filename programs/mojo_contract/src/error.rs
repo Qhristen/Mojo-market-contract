@@ -39,4 +39,6 @@ pub enum AmmError {
     InsufficientLiquidityMinted,
     #[msg("Math overflow occurred")]
     MathOverflow,
+    #[msg("Invalid amount")]
+    InvalidAmount,
 }

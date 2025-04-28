@@ -43,4 +43,13 @@ pub mod mojo_contract {
             .create_pair(pair_name, fee_rate, protocol_fee_rate, ctx.bumps.pair)?;
         Ok(())
     }
+
+    pub fn add_liquidity(
+        ctx: Context<AddLiquidity>,
+        base_amount: u64,
+        paired_amount: u64,
+    ) -> Result<()> {
+        ctx.accounts.add_liquidity(base_amount, paired_amount)?;
+        Ok(())
+    }
 }

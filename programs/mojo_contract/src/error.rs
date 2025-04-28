@@ -34,4 +34,9 @@ pub enum AmmError {
     NotPaused,
     #[msg("Invalid pause transition")]
     InvalidPauseState,
+
+    #[msg("Insufficient liquidity minted")]
+    InsufficientLiquidityMinted,
+    #[msg("Math overflow occurred")]
+    MathOverflow,
 }

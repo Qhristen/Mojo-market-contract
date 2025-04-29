@@ -44,6 +44,13 @@ pub mod mojo_contract {
         Ok(())
     }
 
+    pub fn add_liquidity(
+        ctx: Context<AddLiquidity>,
+        base_amount: u64,
+        paired_amount: u64,
+    ) -> Result<()> {
+        ctx.accounts.add_liquidity(base_amount, paired_amount)?;
+
     pub fn pause_plaform(
         ctx: Context<PausePlatform>,
     ) -> Result<()> {
@@ -73,6 +80,7 @@ pub mod mojo_contract {
         amount: u64,
     ) -> Result<()> {
         ctx.accounts.withdraw_fees(amount)?;
+      
         Ok(())
     }
 }

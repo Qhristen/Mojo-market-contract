@@ -50,10 +50,10 @@ impl<'info> WithdrawPlatformFees<'info> {
                 };
 
 
-        let vaultMint = &self.protocol_fee_vault.mint;
+        let vault_mint = &self.protocol_fee_vault.mint;
         let seeds = [
             b"protocol_fee",
-            vaultMint.as_ref(),
+            vault_mint.as_ref(),
         ];
         let signer = &[&seeds[..]];
 

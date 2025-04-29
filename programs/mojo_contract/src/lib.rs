@@ -62,19 +62,13 @@ pub mod mojo_contract {
     ) -> Result<()> {
         ctx.accounts
             .remove_liquidity(lp_amount, min_base, min_paired)?;
-
-    pub fn pause_plaform(
-        ctx: Context<PausePlatform>,
-    ) -> Result<()> {
-        ctx.accounts.pause_platform();
-        
         Ok(())
     }
 
     pub fn resume_plaform(
         ctx: Context<ResumePlatform>,
     ) -> Result<()> {
-        ctx.accounts.resume_platform();
+        ctx.accounts.resume_platform()?;
         
         Ok(())
     }

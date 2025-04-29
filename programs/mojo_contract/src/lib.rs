@@ -51,6 +51,18 @@ pub mod mojo_contract {
     ) -> Result<()> {
         ctx.accounts.add_liquidity(base_amount, paired_amount)?;
 
+        Ok(())
+    }
+
+    pub fn remove_liquidity(
+        ctx: Context<RemoveLiquidity>,
+        lp_amount: u64,
+        min_base: u64,
+        min_paired: u64,
+    ) -> Result<()> {
+        ctx.accounts
+            .remove_liquidity(lp_amount, min_base, min_paired)?;
+
     pub fn pause_plaform(
         ctx: Context<PausePlatform>,
     ) -> Result<()> {
@@ -80,7 +92,7 @@ pub mod mojo_contract {
         amount: u64,
     ) -> Result<()> {
         ctx.accounts.withdraw_fees(amount)?;
-      
+
         Ok(())
     }
 }

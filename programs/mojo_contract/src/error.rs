@@ -28,13 +28,19 @@ pub enum AmmError {
 
     #[msg("Unauthorized access")]
     Unauthorized,
+
+    #[msg("Token mint mismatch")]
+    TokenMintMismatch,
+    #[msg("Invalid amount")]
+    InvalidAmount
+
     #[msg("Platform is already paused")]
     AlreadyPaused,
     #[msg("Platform is not paused")]
     NotPaused,
     #[msg("Invalid pause transition")]
     InvalidPauseState,
-
+  
     #[msg("Insufficient liquidity minted")]
     InsufficientLiquidityMinted,
     #[msg("Math overflow occurred")]

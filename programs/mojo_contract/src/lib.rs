@@ -50,6 +50,7 @@ pub mod mojo_contract {
         paired_amount: u64,
     ) -> Result<()> {
         ctx.accounts.add_liquidity(base_amount, paired_amount)?;
+
         Ok(())
     }
 

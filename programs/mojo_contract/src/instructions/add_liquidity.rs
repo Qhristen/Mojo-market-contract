@@ -52,6 +52,9 @@ pub struct AddLiquidity<'info> {
     #[account(mut, address = pair.lp_mint)]
     pub lp_mint: InterfaceAccount<'info, Mint>,
 
+    pub lp_mint: Box<InterfaceAccount<'info, Mint>>,
+
+
     /// User's LP token ATA
     #[account(
         mut,
@@ -61,6 +64,7 @@ pub struct AddLiquidity<'info> {
     pub user_lp_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// Token program
+
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
     pub token_program: Interface<'info, TokenInterface>,

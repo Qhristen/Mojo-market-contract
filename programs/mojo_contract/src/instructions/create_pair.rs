@@ -52,7 +52,7 @@ pub struct CreatePair<'info> {
 
     #[account(
         mut,
-        seeds = [b"platform"],
+        seeds = [b"platform-state"],
         bump,
     )]
     pub platform_state: Account<'info, PlatformState>,

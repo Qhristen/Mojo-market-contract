@@ -260,4 +260,682 @@ describe("Platform Program", () => {
       console.log("✅ Excessive fee rate was correctly rejected.");
     }
   });
+
+  // Continuing the tests for create_pair instruction
+
+  it("Creates a token pair successfully", async () => {
+    console.log("🔧 Creating a new token pair...");
+
+    // Create paired token mint (the second token in the pair, not the base token)
+    const pairedTokenMint = anchor.web3.Keypair.generate();
+    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+
+    // Create the paired token mint
+    const mintTx = new anchor.web3.Transaction();
+    mintTx.instructions = [
+      SystemProgram.createAccount({
+        fromPubkey: provider.publicKey,
+        newAccountPubkey: pairedTokenMint.publicKey,
+        lamports: mintLamports,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID
+      }),
+      createInitializeMint2Instruction(
+        pairedTokenMint.publicKey,
+        6, // 6 decimals
+        admin.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
+    ];
+
+    await provider.sendAndConfirm(mintTx, [pairedTokenMint]);
+    console.log("✅ Paired token mint created");
+
+    // Find the pair PDA address
+    const [pairPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pair"),
+        baseTokenMint.publicKey.toBuffer(),
+        pairedTokenMint.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    // Find LP mint PDA address
+    const [lpMintPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("lp_mint"), pairPda.toBuffer()],
+      program.programId
+    );
+
+    // Find vault token account addresses
+    const baseVault = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      pairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const pairedVault = getAssociatedTokenAddressSync(
+      pairedTokenMint.publicKey,
+      pairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    // Pair name and fee settings
+    const pairName = "MOJO/TEST";
+    const feeRate = 30; // 0.3% (30 basis points)
+    const protocolFeeRate = 50; // 0.5% (50 basis points)
+
+    // Create the pair
+    await program.methods
+      .createPair(pairName, feeRate, protocolFeeRate)
+      .accountsPartial({
+        creator: admin.publicKey,
+        pair: pairPda,
+        baseTokenMint: baseTokenMint.publicKey,
+        pairedTokenMint: pairedTokenMint.publicKey,
+        lpMint: lpMintPda,
+        baseVault: baseVault,
+        pairedVault: pairedVault,
+        platformState: platformStatePda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([admin])
+      .rpc();
+
+    console.log("✅ Pair created successfully!");
+
+    // Fetch pair account to verify data
+    const pairAccount = await program.account.pair.fetch(pairPda);
+
+    // Verify pair data
+    assert.ok(pairAccount.baseTokenMint.equals(baseTokenMint.publicKey),
+      "Base token mint doesn't match");
+    assert.ok(pairAccount.pairedTokenMint.equals(pairedTokenMint.publicKey),
+      "Paired token mint doesn't match");
+    assert.ok(pairAccount.lpMint.equals(lpMintPda),
+      "LP mint doesn't match");
+    assert.equal(pairAccount.feeRate, feeRate,
+      "Fee rate doesn't match");
+    assert.equal(pairAccount.protocolFeeRate, protocolFeeRate,
+      "Protocol fee rate doesn't match");
+    assert.ok(pairAccount.baseReserve.eq(new BN(0)),
+      "Base reserve should be 0");
+    assert.ok(pairAccount.pairedReserve.eq(new BN(0)),
+      "Paired reserve should be 0");
+    assert.ok(pairAccount.totalLiquidity.eq(new BN(0)),
+      "Total liquidity should be 0");
+    assert.ok(pairAccount.baseVault.equals(baseVault),
+      "Base vault doesn't match");
+    assert.ok(pairAccount.pairedVault.equals(pairedVault),
+      "Paired vault doesn't match");
+
+    console.log("✅ Pair account data verified");
+  });
+
+  it("Fails to create pair with excessive fee rate", async () => {
+    console.log("🧪 Testing fee rate constraints...");
+
+    // Create a new token mint for this test
+    const testPairedTokenMint = anchor.web3.Keypair.generate();
+    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+
+    // Create the test paired token mint
+    const mintTx = new anchor.web3.Transaction();
+    mintTx.instructions = [
+      SystemProgram.createAccount({
+        fromPubkey: provider.publicKey,
+        newAccountPubkey: testPairedTokenMint.publicKey,
+        lamports: mintLamports,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID
+      }),
+      createInitializeMint2Instruction(
+        testPairedTokenMint.publicKey,
+        6, // 6 decimals
+        admin.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
+    ];
+
+    await provider.sendAndConfirm(mintTx, [testPairedTokenMint]);
+
+    // Find test pair PDA address
+    const [testPairPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pair"),
+        baseTokenMint.publicKey.toBuffer(),
+        testPairedTokenMint.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    // Find test LP mint PDA address
+    const [testLpMintPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("lp_mint"), testPairPda.toBuffer()],
+      program.programId
+    );
+
+    // Find test vault addresses
+    const testBaseVault = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const testPairedVault = getAssociatedTokenAddressSync(
+      testPairedTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    // Try with excessive fee rate (>10%)
+    const excessiveFeeRate = 1100; // 11% (1100 basis points)
+    const protocolFeeRate = 50; // 0.5%
+
+    try {
+      await program.methods
+        .createPair("TEST/EXCESSIVE", excessiveFeeRate, protocolFeeRate)
+        .accountsPartial({
+          creator: admin.publicKey,
+          pair: testPairPda,
+          baseTokenMint: baseTokenMint.publicKey,
+          pairedTokenMint: testPairedTokenMint.publicKey,
+          lpMint: testLpMintPda,
+          baseVault: testBaseVault,
+          pairedVault: testPairedVault,
+          platformState: platformStatePda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
+
+      assert.fail("🚨 Creating pair with excessive fee rate should have failed!");
+    } catch (error) {
+      console.log("✅ Excessive fee rate was correctly rejected");
+    }
+  });
+
+  it("Fails to create pair with excessive protocol fee rate", async () => {
+    console.log("🧪 Testing protocol fee rate constraints...");
+
+    // Create a new token mint for this test
+    const testPairedTokenMint = anchor.web3.Keypair.generate();
+    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+
+    // Create the test paired token mint
+    const mintTx = new anchor.web3.Transaction();
+    mintTx.instructions = [
+      SystemProgram.createAccount({
+        fromPubkey: provider.publicKey,
+        newAccountPubkey: testPairedTokenMint.publicKey,
+        lamports: mintLamports,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID
+      }),
+      createInitializeMint2Instruction(
+        testPairedTokenMint.publicKey,
+        6, // 6 decimals
+        admin.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
+    ];
+
+    await provider.sendAndConfirm(mintTx, [testPairedTokenMint]);
+
+    // Find test pair PDA address
+    const [testPairPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pair"),
+        baseTokenMint.publicKey.toBuffer(),
+        testPairedTokenMint.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    // Find test LP mint PDA address
+    const [testLpMintPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("lp_mint"), testPairPda.toBuffer()],
+      program.programId
+    );
+
+    // Find test vault addresses
+    const testBaseVault = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const testPairedVault = getAssociatedTokenAddressSync(
+      testPairedTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    // Normal fee rate but excessive protocol fee (>2%)
+    const feeRate = 30; // 0.3%
+    const excessiveProtocolFeeRate = 250; // 2.5% (250 basis points)
+
+    try {
+      await program.methods
+        .createPair("TEST/EXCESSIVE_PROTOCOL", feeRate, excessiveProtocolFeeRate)
+        .accountsPartial({
+          creator: admin.publicKey,
+          pair: testPairPda,
+          baseTokenMint: baseTokenMint.publicKey,
+          pairedTokenMint: testPairedTokenMint.publicKey,
+          lpMint: testLpMintPda,
+          baseVault: testBaseVault,
+          pairedVault: testPairedVault,
+          platformState: platformStatePda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
+
+      assert.fail("🚨 Creating pair with excessive protocol fee rate should have failed!");
+    } catch (error) {
+      console.log("✅ Excessive protocol fee rate was correctly rejected");
+    }
+  });
+
+  it("Fails to create pair with wrong base token", async () => {
+    console.log("🧪 Testing base token validation...");
+
+    // Create two new token mints for this test
+    const wrongBaseTokenMint = anchor.web3.Keypair.generate();
+    const anotherPairedTokenMint = anchor.web3.Keypair.generate();
+    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+
+    // Create the wrong base token mint
+    let mintTx = new anchor.web3.Transaction();
+    mintTx.instructions = [
+      SystemProgram.createAccount({
+        fromPubkey: provider.publicKey,
+        newAccountPubkey: wrongBaseTokenMint.publicKey,
+        lamports: mintLamports,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID
+      }),
+      createInitializeMint2Instruction(
+        wrongBaseTokenMint.publicKey,
+        6, // 6 decimals
+        admin.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
+    ];
+
+    await provider.sendAndConfirm(mintTx, [wrongBaseTokenMint]);
+
+    // Create another paired token mint
+    mintTx = new anchor.web3.Transaction();
+    mintTx.instructions = [
+      SystemProgram.createAccount({
+        fromPubkey: provider.publicKey,
+        newAccountPubkey: anotherPairedTokenMint.publicKey,
+        lamports: mintLamports,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID
+      }),
+      createInitializeMint2Instruction(
+        anotherPairedTokenMint.publicKey,
+        6, // 6 decimals
+        admin.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
+    ];
+
+    await provider.sendAndConfirm(mintTx, [anotherPairedTokenMint]);
+
+    // Find test pair PDA address with wrong base token
+    const [testPairPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pair"),
+        wrongBaseTokenMint.publicKey.toBuffer(),
+        anotherPairedTokenMint.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    // Find test LP mint PDA address
+    const [testLpMintPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("lp_mint"), testPairPda.toBuffer()],
+      program.programId
+    );
+
+    // Find test vault addresses
+    const testBaseVault = getAssociatedTokenAddressSync(
+      wrongBaseTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const testPairedVault = getAssociatedTokenAddressSync(
+      anotherPairedTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    // Valid fee rates
+    const feeRate = 30; // 0.3%
+    const protocolFeeRate = 50; // 0.5%
+
+    try {
+      await program.methods
+        .createPair("WRONG/TEST", feeRate, protocolFeeRate)
+        .accountsPartial({
+          creator: admin.publicKey,
+          pair: testPairPda,
+          baseTokenMint: wrongBaseTokenMint.publicKey, // Using wrong base token!
+          pairedTokenMint: anotherPairedTokenMint.publicKey,
+          lpMint: testLpMintPda,
+          baseVault: testBaseVault,
+          pairedVault: testPairedVault,
+          platformState: platformStatePda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
+
+      assert.fail("🚨 Creating pair with wrong base token should have failed!");
+    } catch (error) {
+      console.log("✅ Wrong base token was correctly rejected");
+    }
+  });
+
+  it("Fails to create the same pair twice", async () => {
+    console.log("🧪 Testing duplicate pair creation prevention...");
+
+    // Create a new paired token mint
+    const duplicatePairedTokenMint = anchor.web3.Keypair.generate();
+    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+
+    // Create the paired token mint
+    const mintTx = new anchor.web3.Transaction();
+    mintTx.instructions = [
+      SystemProgram.createAccount({
+        fromPubkey: provider.publicKey,
+        newAccountPubkey: duplicatePairedTokenMint.publicKey,
+        lamports: mintLamports,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID
+      }),
+      createInitializeMint2Instruction(
+        duplicatePairedTokenMint.publicKey,
+        6, // 6 decimals
+        admin.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
+    ];
+
+    await provider.sendAndConfirm(mintTx, [duplicatePairedTokenMint]);
+
+    // Find pair PDA address
+    const [pairPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pair"),
+        baseTokenMint.publicKey.toBuffer(),
+        duplicatePairedTokenMint.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    // Find LP mint PDA address
+    const [lpMintPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("lp_mint"), pairPda.toBuffer()],
+      program.programId
+    );
+
+    // Find vault addresses
+    const baseVault = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      pairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const pairedVault = getAssociatedTokenAddressSync(
+      duplicatePairedTokenMint.publicKey,
+      pairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    // Create the pair first time
+    await program.methods
+      .createPair("MOJO/DUPE", 30, 50)
+      .accountsPartial({
+        creator: admin.publicKey,
+        pair: pairPda,
+        baseTokenMint: baseTokenMint.publicKey,
+        pairedTokenMint: duplicatePairedTokenMint.publicKey,
+        lpMint: lpMintPda,
+        baseVault: baseVault,
+        pairedVault: pairedVault,
+        platformState: platformStatePda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([admin])
+      .rpc();
+
+    console.log("✅ First pair created successfully");
+
+    // Try to create the same pair again
+    try {
+      await program.methods
+        .createPair("MOJO/DUPE", 30, 50)
+        .accountsPartial({
+          creator: admin.publicKey,
+          pair: pairPda,
+          baseTokenMint: baseTokenMint.publicKey,
+          pairedTokenMint: duplicatePairedTokenMint.publicKey,
+          lpMint: lpMintPda,
+          baseVault: baseVault,
+          pairedVault: pairedVault,
+          platformState: platformStatePda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
+
+      assert.fail("🚨 Creating the same pair twice should have failed!");
+    } catch (error) {
+      console.log("✅ Duplicate pair creation was correctly rejected");
+    }
+  });
+
+  it("Can create multiple different pairs", async () => {
+    console.log("🧪 Testing creation of multiple pairs...");
+
+    // Create two new paired token mints
+    const pairedTokenMint1 = anchor.web3.Keypair.generate();
+    const pairedTokenMint2 = anchor.web3.Keypair.generate();
+    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+
+    // Create first paired token mint
+    let mintTx = new anchor.web3.Transaction();
+    mintTx.instructions = [
+      SystemProgram.createAccount({
+        fromPubkey: provider.publicKey,
+        newAccountPubkey: pairedTokenMint1.publicKey,
+        lamports: mintLamports,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID
+      }),
+      createInitializeMint2Instruction(
+        pairedTokenMint1.publicKey,
+        6, // 6 decimals
+        admin.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
+    ];
+
+    await provider.sendAndConfirm(mintTx, [pairedTokenMint1]);
+
+    // Create second paired token mint
+    mintTx = new anchor.web3.Transaction();
+    mintTx.instructions = [
+      SystemProgram.createAccount({
+        fromPubkey: provider.publicKey,
+        newAccountPubkey: pairedTokenMint2.publicKey,
+        lamports: mintLamports,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID
+      }),
+      createInitializeMint2Instruction(
+        pairedTokenMint2.publicKey,
+        6, // 6 decimals
+        admin.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
+    ];
+
+    await provider.sendAndConfirm(mintTx, [pairedTokenMint2]);
+
+    // Find pair 1 PDA
+    const [pair1Pda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pair"),
+        baseTokenMint.publicKey.toBuffer(),
+        pairedTokenMint1.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    // Find LP mint 1 PDA
+    const [lpMint1Pda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("lp_mint"), pair1Pda.toBuffer()],
+      program.programId
+    );
+
+    // Find vault 1 addresses
+    const baseVault1 = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      pair1Pda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const pairedVault1 = getAssociatedTokenAddressSync(
+      pairedTokenMint1.publicKey,
+      pair1Pda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    // Create pair 1
+    await program.methods
+      .createPair("MOJO/TOKEN1", 30, 50)
+      .accountsPartial({
+        creator: admin.publicKey,
+        pair: pair1Pda,
+        baseTokenMint: baseTokenMint.publicKey,
+        pairedTokenMint: pairedTokenMint1.publicKey,
+        lpMint: lpMint1Pda,
+        baseVault: baseVault1,
+        pairedVault: pairedVault1,
+        platformState: platformStatePda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([admin])
+      .rpc();
+
+    console.log("✅ First pair created successfully");
+
+    // Find pair 2 PDA
+    const [pair2Pda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pair"),
+        baseTokenMint.publicKey.toBuffer(),
+        pairedTokenMint2.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    // Find LP mint 2 PDA
+    const [lpMint2Pda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("lp_mint"), pair2Pda.toBuffer()],
+      program.programId
+    );
+
+    // Find vault 2 addresses
+    const baseVault2 = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      pair2Pda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const pairedVault2 = getAssociatedTokenAddressSync(
+      pairedTokenMint2.publicKey,
+      pair2Pda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    // Create pair 2
+    await program.methods
+      .createPair("MOJO/TOKEN2", 50, 20)
+      .accountsPartial({
+        creator: admin.publicKey,
+        pair: pair2Pda,
+        baseTokenMint: baseTokenMint.publicKey,
+        pairedTokenMint: pairedTokenMint2.publicKey,
+        lpMint: lpMint2Pda,
+        baseVault: baseVault2,
+        pairedVault: pairedVault2,
+        platformState: platformStatePda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([admin])
+      .rpc();
+
+    console.log("✅ Second pair created successfully");
+
+    // Verify both pairs exist and have different data
+    const pair1Account = await program.account.pair.fetch(pair1Pda);
+    const pair2Account = await program.account.pair.fetch(pair2Pda);
+
+    assert.ok(pair1Account.pairedTokenMint.equals(pairedTokenMint1.publicKey),
+      "Pair 1 paired mint incorrect");
+    assert.ok(pair2Account.pairedTokenMint.equals(pairedTokenMint2.publicKey),
+      "Pair 2 paired mint incorrect");
+    assert.equal(pair1Account.feeRate, 30, "Pair 1 fee rate incorrect");
+    assert.equal(pair2Account.feeRate, 50, "Pair 2 fee rate incorrect");
+
+    console.log("✅ Multiple pairs verification complete");
+  });
 });
+
+

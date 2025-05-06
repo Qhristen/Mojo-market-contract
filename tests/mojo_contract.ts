@@ -330,7 +330,7 @@ describe("Platform Program", () => {
 
     // Create the pair
     await program.methods
-      .createPair(pairName, feeRate, protocolFeeRate)
+      .createPair(pairName)
       .accountsPartial({
         creator: admin.publicKey,
         pair: pairPda,
@@ -359,10 +359,6 @@ describe("Platform Program", () => {
       "Paired token mint doesn't match");
     assert.ok(pairAccount.lpMint.equals(lpMintPda),
       "LP mint doesn't match");
-    assert.equal(pairAccount.feeRate, feeRate,
-      "Fee rate doesn't match");
-    assert.equal(pairAccount.protocolFeeRate, protocolFeeRate,
-      "Protocol fee rate doesn't match");
     assert.ok(pairAccount.baseReserve.eq(new BN(0)),
       "Base reserve should be 0");
     assert.ok(pairAccount.pairedReserve.eq(new BN(0)),
@@ -442,7 +438,7 @@ describe("Platform Program", () => {
 
     try {
       await program.methods
-        .createPair("TEST/EXCESSIVE", excessiveFeeRate, protocolFeeRate)
+        .createPair("TEST/EXCESSIVE")
         .accountsPartial({
           creator: admin.publicKey,
           pair: testPairPda,
@@ -530,7 +526,7 @@ describe("Platform Program", () => {
 
     try {
       await program.methods
-        .createPair("TEST/EXCESSIVE_PROTOCOL", feeRate, excessiveProtocolFeeRate)
+        .createPair("TEST/EXCESSIVE_PROTOCOL")
         .accountsPartial({
           creator: admin.publicKey,
           pair: testPairPda,
@@ -640,7 +636,7 @@ describe("Platform Program", () => {
 
     try {
       await program.methods
-        .createPair("WRONG/TEST", feeRate, protocolFeeRate)
+        .createPair("WRONG/TEST")
         .accountsPartial({
           creator: admin.publicKey,
           pair: testPairPda,
@@ -724,7 +720,7 @@ describe("Platform Program", () => {
 
     // Create the pair first time
     await program.methods
-      .createPair("MOJO/DUPE", 30, 50)
+      .createPair("MOJO/DUPE")
       .accountsPartial({
         creator: admin.publicKey,
         pair: pairPda,
@@ -746,7 +742,7 @@ describe("Platform Program", () => {
     // Try to create the same pair again
     try {
       await program.methods
-        .createPair("MOJO/DUPE", 30, 50)
+        .createPair("MOJO/DUPE")
         .accountsPartial({
           creator: admin.publicKey,
           pair: pairPda,
@@ -852,7 +848,7 @@ describe("Platform Program", () => {
 
     // Create pair 1
     await program.methods
-      .createPair("MOJO/TOKEN1", 30, 50)
+      .createPair("MOJO/TOKEN1")
       .accountsPartial({
         creator: admin.publicKey,
         pair: pair1Pda,
@@ -904,7 +900,7 @@ describe("Platform Program", () => {
 
     // Create pair 2
     await program.methods
-      .createPair("MOJO/TOKEN2", 50, 20)
+      .createPair("MOJO/TOKEN2")
       .accountsPartial({
         creator: admin.publicKey,
         pair: pair2Pda,
@@ -931,8 +927,6 @@ describe("Platform Program", () => {
       "Pair 1 paired mint incorrect");
     assert.ok(pair2Account.pairedTokenMint.equals(pairedTokenMint2.publicKey),
       "Pair 2 paired mint incorrect");
-    assert.equal(pair1Account.feeRate, 30, "Pair 1 fee rate incorrect");
-    assert.equal(pair2Account.feeRate, 50, "Pair 2 fee rate incorrect");
 
     console.log("✅ Multiple pairs verification complete");
   });

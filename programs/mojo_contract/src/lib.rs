@@ -9,7 +9,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("HrEj3FFzTt965KGmU4krw1y7oeS1QUSA468Pkw7S2cgM");
+declare_id!("HQ31yGhtJXfrmi42HHEiCSZp5sxcqgEkqhEAYYmDgtcs");
 
 #[program]
 pub mod mojo_contract {
@@ -36,11 +36,9 @@ pub mod mojo_contract {
     pub fn create_pair(
         ctx: Context<CreatePair>,
         pair_name: String,
-        fee_rate: u16,
-        protocol_fee_rate: u16,
     ) -> Result<()> {
         ctx.accounts
-            .create_pair(pair_name, fee_rate, protocol_fee_rate, ctx.bumps.pair)?;
+            .create_pair(pair_name, ctx.bumps.pair)?;
         Ok(())
     }
 

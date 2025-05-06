@@ -67,13 +67,8 @@ impl<'info> CreatePair<'info> {
     pub fn create_pair(
         &mut self,
         pair_name: String,
-        fee_rate: u16,
-        protocol_fee_rate: u16,
         bump: u8,
     ) -> Result<()> {
-        // Validate inputs
-        require!(fee_rate <= 1000, AmmError::FeeTooHigh); // Max 10% fee
-        require!(protocol_fee_rate <= 200, AmmError::ProtocolFeeTooHigh); // Max 2% protocol fee
 
         // Check that base token is the platform's base token (MOJO)
         require!(
@@ -88,11 +83,9 @@ impl<'info> CreatePair<'info> {
             lp_mint: self.lp_mint.key(),
             base_reserve: 0,
             paired_reserve: 0,
-            fee_rate,
             total_liquidity: 0,
             bump,
             last_swap_time: Clock::get()?.unix_timestamp,
-            protocol_fee_rate,
             base_vault: self.base_vault.key(),
             paired_vault: self.paired_vault.key(),
         });

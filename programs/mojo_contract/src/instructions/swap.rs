@@ -1,14 +1,17 @@
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::AssociatedToken;
+use std::str::FromStr;
 
-use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface, TransferChecked, transfer_checked};
+use anchor_spl::token::{transfer, Transfer};
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::{error::AmmError, Pair, PlatformState};
+use crate::{error::AmmError, Pair, PlatformState, WSOL_MINT};
 
 #[derive(Accounts)]
 pub struct Swap<'info> {
      // Platform configuration
      #[account(has_one = base_token_mint)]
-    pub platform: Account<'info, PlatformState>,
+    pub platform_state: Account<'info, PlatformState>,
 
     #[account(
         mut,
@@ -39,10 +42,10 @@ pub struct Swap<'info> {
 
     // Protocol fee account (PDA-derived)
     #[account(
-        mut,
-        seeds = [b"protocol_fee", input_token_account.mint.as_ref()],
-        bump,
-        constraint = protocol_fee_vault.mint == input_token_account.mint
+        init,
+        payer = user,
+        associated_token::mint = paired_token_mint,
+        associated_token::authority = platform_state,
     )]
     pub protocol_fee_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
@@ -57,15 +60,11 @@ pub struct Swap<'info> {
     pub output_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut)]
-    pub input_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut)]
-    pub output_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-
-    #[account(mut)]
     pub user: Signer<'info>,
 
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 
@@ -74,13 +73,12 @@ impl<'info> Swap<'info> {
       
         let clock = Clock::get()?;
         let pair = &mut self.pair;
-        let fee_rate = pair.fee_rate;
         let base_token_mint =  pair.base_token_mint;
         
         // 1. Validation checks
         require!(input_amount > 0, AmmError::ZeroAmount);
-        require!(!self.platform.is_paused, AmmError::TradingPaused);
-        // require!(platform.protocol_fee_ratio <= 10000, AmmError::InvalidFeeConfig);
+        require!(!self.platform_state.is_paused, AmmError::TradingPaused);
+        // require!(platform_state.protocol_fee_ratio <= 10000, AmmError::InvalidFeeConfig);
         require!(
             clock.unix_timestamp - pair.last_swap_time > 1,
             AmmError::SwapCooldown
@@ -91,15 +89,21 @@ impl<'info> Swap<'info> {
         let input_reserve = if is_base_input { pair.base_reserve } else { pair.paired_reserve };
         let output_reserve = if is_base_input { pair.paired_reserve } else { pair.base_reserve };
 
+         // Detect SOL input/output
+         let wsol_pubkey = Pubkey::from_str(WSOL_MINT).unwrap();
+         let is_sol_input = self.input_token_account.mint == wsol_pubkey;
+         let is_sol_output = self.output_token_account.mint == wsol_pubkey;
+ 
+
         // 3. Calculate fees
         let total_fee = input_amount
-            .checked_mul(fee_rate as u64)
+            .checked_mul(self.platform_state.protocol_fee_rate as u64)
             .ok_or(AmmError::MathError)?
             .checked_div(10000)
             .ok_or(AmmError::MathError)?;
 
         let protocol_fee = total_fee
-            .checked_mul(self.platform.protocol_fee_rate as u64)
+            .checked_mul(self.platform_state.protocol_fee_rate as u64)
             .ok_or(AmmError::MathError)?
             .checked_div(10000)
             .ok_or(AmmError::MathError)?;
@@ -148,9 +152,8 @@ impl<'info> Swap<'info> {
         // Transfer input tokens from user to vault
         let transfer_input_ctx = CpiContext::new(
             self.token_program.to_account_info(),
-            TransferChecked {
+            Transfer{
                 from: self.input_token_account.to_account_info(),
-                mint: self.paired_token_mint.to_account_info(),
                 to: if is_base_input {
                     self.base_vault.to_account_info()
                 } else {
@@ -159,7 +162,7 @@ impl<'info> Swap<'info> {
                 authority: self.user.to_account_info(),
             },
         );
-        transfer_checked(transfer_input_ctx, input_amount, self.paired_token_mint.decimals)?;
+        transfer(transfer_input_ctx, input_amount)?;
 
           // Transfer protocol fee to protocol's account
           let signer_seeds: &[&[&[u8]]] = &[&[
@@ -171,36 +174,34 @@ impl<'info> Swap<'info> {
         
         let protocol_fee_transfer_ctx = CpiContext::new_with_signer(
             self.token_program.to_account_info(),
-            TransferChecked {
+            Transfer {
                 from: if is_base_input {
                     self.paired_vault.to_account_info()
                 } else {
                     self.base_vault.to_account_info()
                 },
-                mint: self.base_token_mint.to_account_info(),
                 to: self.protocol_fee_vault.to_account_info(),
                 authority: pair.to_account_info(),
             },
             signer_seeds,
         );
-        transfer_checked(protocol_fee_transfer_ctx, protocol_fee, self.base_token_mint.decimals)?;
+        transfer(protocol_fee_transfer_ctx, protocol_fee)?;
 
         // Transfer output tokens to user
         let output_transfer_ctx = CpiContext::new_with_signer(
             self.token_program.to_account_info(),
-            TransferChecked {
+            Transfer {
                 from: if is_base_input {
                     self.base_vault.to_account_info()
                 } else {
                     self.paired_vault.to_account_info()
                 },
-                mint: self.base_token_mint.to_account_info(),
                 to: self.output_token_account.to_account_info(),
                 authority: pair.to_account_info(),
             },
             signer_seeds,
         );
-        transfer_checked(output_transfer_ctx, output_amount, self.base_token_mint.decimals)?;
+        transfer(output_transfer_ctx, output_amount)?;
 
 
         Ok(())

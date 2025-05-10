@@ -9,7 +9,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("HrEj3FFzTt965KGmU4krw1y7oeS1QUSA468Pkw7S2cgM");
+declare_id!("AMGoaF1FYy6qijdYnLwqQmpxe7eQTVwAy2SvTQbHQcER");
 
 #[program]
 pub mod mojo_contract {
@@ -33,14 +33,8 @@ pub mod mojo_contract {
         Ok(())
     }
 
-    pub fn create_pair(
-        ctx: Context<CreatePair>,
-        pair_name: String,
-        fee_rate: u16,
-        protocol_fee_rate: u16,
-    ) -> Result<()> {
-        ctx.accounts
-            .create_pair(pair_name, fee_rate, protocol_fee_rate, ctx.bumps.pair)?;
+    pub fn create_pair(ctx: Context<CreatePair>) -> Result<()> {
+        ctx.accounts.create_pair(ctx.bumps.pair)?;
         Ok(())
     }
 
@@ -65,26 +59,18 @@ pub mod mojo_contract {
         Ok(())
     }
 
-    pub fn resume_plaform(
-        ctx: Context<ResumePlatform>,
-    ) -> Result<()> {
+    pub fn resume_plaform(ctx: Context<ResumePlatform>) -> Result<()> {
         ctx.accounts.resume_platform()?;
-        
+
         Ok(())
     }
 
-    pub fn update_fee_rate(
-        ctx: Context<UpdateFeeRate>,
-        new_fee_rate: u16,
-    ) -> Result<()> {
+    pub fn update_fee_rate(ctx: Context<UpdateFeeRate>, new_fee_rate: u16) -> Result<()> {
         ctx.accounts.update_fee_rate(new_fee_rate)?;
         Ok(())
     }
 
-    pub fn withdraw_platform_fees(
-        ctx: Context<WithdrawPlatformFees>,
-        amount: u64,
-    ) -> Result<()> {
+    pub fn withdraw_platform_fees(ctx: Context<WithdrawPlatformFees>, amount: u64) -> Result<()> {
         ctx.accounts.withdraw_fees(amount)?;
 
         Ok(())

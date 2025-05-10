@@ -66,7 +66,6 @@ pub struct CreatePair<'info> {
 impl<'info> CreatePair<'info> {
     pub fn create_pair(
         &mut self,
-        pair_name: String,
         bump: u8,
     ) -> Result<()> {
 
@@ -89,8 +88,6 @@ impl<'info> CreatePair<'info> {
             base_vault: self.base_vault.key(),
             paired_vault: self.paired_vault.key(),
         });
-
-        msg!("Created new pair: {}", pair_name);
 
         Ok(())
     }

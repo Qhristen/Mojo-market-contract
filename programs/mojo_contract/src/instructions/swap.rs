@@ -1,16 +1,15 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
-use std::str::FromStr;
 
-use anchor_spl::token::{transfer, Transfer};
+use anchor_spl::token::{ transfer, Transfer};
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::{error::AmmError, Pair, PlatformState, WSOL_MINT};
+use crate::{error::AmmError, Pair, PlatformState};
 
 #[derive(Accounts)]
 pub struct Swap<'info> {
-     // Platform configuration
-     #[account(has_one = base_token_mint)]
+    // Platform configuration
+    #[account(has_one = base_token_mint)]
     pub platform_state: Account<'info, PlatformState>,
 
     #[account(
@@ -32,7 +31,7 @@ pub struct Swap<'info> {
         constraint = base_vault.mint == base_token_mint.key()
     )]
     pub base_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    
+
     #[account(
         mut,
         address = pair.paired_vault,
@@ -42,22 +41,17 @@ pub struct Swap<'info> {
 
     // Protocol fee account (PDA-derived)
     #[account(
-        init,
-        payer = user,
-        associated_token::mint = paired_token_mint,
+        mut,
+        associated_token::mint = base_token_mint,
         associated_token::authority = platform_state,
     )]
-    pub protocol_fee_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub platform_treasury: Box<InterfaceAccount<'info, TokenAccount>>,
 
     // Input/Output token accounts
-    #[account(
-        mut,
-        constraint = input_token_account.mint == base_token_mint.key() || 
-                     input_token_account.mint == paired_token_mint.key()
-    )]
-    pub input_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut)]
-    pub output_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub base_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut)]
+    pub pair_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut)]
     pub user: Signer<'info>,
@@ -67,14 +61,12 @@ pub struct Swap<'info> {
     pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
-
 impl<'info> Swap<'info> {
-    pub fn swap(&mut self,  input_amount: u64, min_output_amount: u64) -> Result<()> {
-      
+    pub fn swap(&mut self, input_amount: u64, min_output_amount: u64) -> Result<()> {
         let clock = Clock::get()?;
         let pair = &mut self.pair;
-        let base_token_mint =  pair.base_token_mint;
-        
+        let base_token_mint = pair.base_token_mint;
+
         // 1. Validation checks
         require!(input_amount > 0, AmmError::ZeroAmount);
         require!(!self.platform_state.is_paused, AmmError::TradingPaused);
@@ -85,15 +77,17 @@ impl<'info> Swap<'info> {
         );
 
         // 2. Determine swap direction and reserves
-        let is_base_input = self.input_token_account.mint == base_token_mint;
-        let input_reserve = if is_base_input { pair.base_reserve } else { pair.paired_reserve };
-        let output_reserve = if is_base_input { pair.paired_reserve } else { pair.base_reserve };
-
-         // Detect SOL input/output
-         let wsol_pubkey = Pubkey::from_str(WSOL_MINT).unwrap();
-         let is_sol_input = self.input_token_account.mint == wsol_pubkey;
-         let is_sol_output = self.output_token_account.mint == wsol_pubkey;
- 
+        let is_base_input = self.base_token_account.mint == base_token_mint;
+        let input_reserve = if is_base_input {
+            pair.base_reserve
+        } else {
+            pair.paired_reserve
+        };
+        let output_reserve = if is_base_input {
+            pair.paired_reserve
+        } else {
+            pair.base_reserve
+        };
 
         // 3. Calculate fees
         let total_fee = input_amount
@@ -108,21 +102,23 @@ impl<'info> Swap<'info> {
             .checked_div(10000)
             .ok_or(AmmError::MathError)?;
 
-        let liquidity_fee = total_fee.checked_sub(protocol_fee)
+        let liquidity_fee = total_fee
+            .checked_sub(protocol_fee)
             .ok_or(AmmError::MathError)?;
 
-        let input_amount_after_fee = input_amount.checked_sub(total_fee)
+        let input_amount_after_fee = input_amount
+            .checked_sub(total_fee)
             .ok_or(AmmError::MathError)?;
 
         // 4. Calculate output using x*y=k formula
         let numerator = input_amount_after_fee
             .checked_mul(output_reserve)
             .ok_or(AmmError::MathError)?;
-        
+
         let denominator = input_reserve
             .checked_add(input_amount_after_fee)
             .ok_or(AmmError::MathError)?;
-        
+
         let output_amount = numerator
             .checked_div(denominator)
             .ok_or(AmmError::MathError)?;
@@ -135,7 +131,11 @@ impl<'info> Swap<'info> {
 
         // 6. Update reserves with liquidity fee
         let new_input_reserve = input_reserve
-            .checked_add(input_amount_after_fee.checked_add(liquidity_fee).ok_or(AmmError::MathError)?)
+            .checked_add(
+                input_amount_after_fee
+                    .checked_add(liquidity_fee)
+                    .ok_or(AmmError::MathError)?,
+            )
             .ok_or(AmmError::MathError)?;
         let new_output_reserve = output_reserve
             .checked_sub(output_amount)
@@ -152,8 +152,8 @@ impl<'info> Swap<'info> {
         // Transfer input tokens from user to vault
         let transfer_input_ctx = CpiContext::new(
             self.token_program.to_account_info(),
-            Transfer{
-                from: self.input_token_account.to_account_info(),
+            Transfer {
+                from: self.base_token_account.to_account_info(),
                 to: if is_base_input {
                     self.base_vault.to_account_info()
                 } else {
@@ -164,14 +164,14 @@ impl<'info> Swap<'info> {
         );
         transfer(transfer_input_ctx, input_amount)?;
 
-          // Transfer protocol fee to protocol's account
-          let signer_seeds: &[&[&[u8]]] = &[&[
+        // Transfer protocol fee to protocol's account
+        let signer_seeds: &[&[&[u8]]] = &[&[
             b"pair",
             pair.base_token_mint.as_ref(),
             pair.paired_token_mint.as_ref(),
             &[pair.bump],
         ]];
-        
+
         let protocol_fee_transfer_ctx = CpiContext::new_with_signer(
             self.token_program.to_account_info(),
             Transfer {
@@ -180,7 +180,7 @@ impl<'info> Swap<'info> {
                 } else {
                     self.base_vault.to_account_info()
                 },
-                to: self.protocol_fee_vault.to_account_info(),
+                to: self.platform_treasury.to_account_info(),
                 authority: pair.to_account_info(),
             },
             signer_seeds,
@@ -196,13 +196,12 @@ impl<'info> Swap<'info> {
                 } else {
                     self.paired_vault.to_account_info()
                 },
-                to: self.output_token_account.to_account_info(),
+                to: self.pair_token_account.to_account_info(),
                 authority: pair.to_account_info(),
             },
             signer_seeds,
         );
         transfer(output_transfer_ctx, output_amount)?;
-
 
         Ok(())
     }

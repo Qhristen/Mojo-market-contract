@@ -11,7 +11,7 @@ import {
   createMintToInstruction,
   getAssociatedTokenAddressSync,
   getMinimumBalanceForRentExemptMint,
-  MINT_SIZE
+  MINT_SIZE,
 } from "@solana/spl-token";
 
 import { SystemProgram } from "@solana/web3.js";
@@ -29,6 +29,8 @@ describe("Platform Program", () => {
 
   // Mint and account PDAs
   const baseTokenMint = anchor.web3.Keypair.generate();
+  const pairedTokenMint = anchor.web3.Keypair.generate();
+
   const [platformStatePda] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("platform-state")],
     program.programId
@@ -49,7 +51,9 @@ describe("Platform Program", () => {
     console.log("🔄 Setting up test environment...");
 
     // Get rent-exemption amount for mint
-    const lamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+    const lamports = await getMinimumBalanceForRentExemptMint(
+      provider.connection
+    );
 
     // Airdrop SOL to provider wallet
     await provider.connection.confirmTransaction(
@@ -71,7 +75,7 @@ describe("Platform Program", () => {
         newAccountPubkey: baseTokenMint.publicKey,
         lamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         baseTokenMint.publicKey,
@@ -79,7 +83,7 @@ describe("Platform Program", () => {
         admin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(tx, [baseTokenMint]);
@@ -104,7 +108,9 @@ describe("Platform Program", () => {
       .rpc();
 
     console.log("✅ Fetching platform state...");
-    const platformState = await program.account.platformState.fetch(platformStatePda);
+    const platformState = await program.account.platformState.fetch(
+      platformStatePda
+    );
 
     // Verify platform state data
     assert.ok(platformState.baseTokenMint.equals(baseTokenMint.publicKey));
@@ -143,7 +149,9 @@ describe("Platform Program", () => {
 
     // Create the new base token mint for this test
     let tx = new anchor.web3.Transaction();
-    const lamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+    const lamports = await getMinimumBalanceForRentExemptMint(
+      provider.connection
+    );
 
     tx.instructions = [
       SystemProgram.createAccount({
@@ -151,7 +159,7 @@ describe("Platform Program", () => {
         newAccountPubkey: newBaseTokenMint.publicKey,
         lamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         newBaseTokenMint.publicKey,
@@ -159,7 +167,7 @@ describe("Platform Program", () => {
         unauthorizedUser.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(tx, [newBaseTokenMint]);
@@ -215,7 +223,9 @@ describe("Platform Program", () => {
 
     // Create the test mint
     let tx = new anchor.web3.Transaction();
-    const lamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+    const lamports = await getMinimumBalanceForRentExemptMint(
+      provider.connection
+    );
 
     tx.instructions = [
       SystemProgram.createAccount({
@@ -223,7 +233,7 @@ describe("Platform Program", () => {
         newAccountPubkey: testMint.publicKey,
         lamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         testMint.publicKey,
@@ -231,7 +241,7 @@ describe("Platform Program", () => {
         testAdmin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(tx, [testMint]);
@@ -254,7 +264,9 @@ describe("Platform Program", () => {
         .signers([testAdmin])
         .rpc();
 
-      assert.fail("🚨 Initialization with excessive fee rate should have failed!");
+      assert.fail(
+        "🚨 Initialization with excessive fee rate should have failed!"
+      );
     } catch (error) {
       // Expected to fail if you've implemented fee rate validation
       console.log("✅ Excessive fee rate was correctly rejected.");
@@ -267,8 +279,9 @@ describe("Platform Program", () => {
     console.log("🔧 Creating a new token pair...");
 
     // Create paired token mint (the second token in the pair, not the base token)
-    const pairedTokenMint = anchor.web3.Keypair.generate();
-    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+    const mintLamports = await getMinimumBalanceForRentExemptMint(
+      provider.connection
+    );
 
     // Create the paired token mint
     const mintTx = new anchor.web3.Transaction();
@@ -278,7 +291,7 @@ describe("Platform Program", () => {
         newAccountPubkey: pairedTokenMint.publicKey,
         lamports: mintLamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         pairedTokenMint.publicKey,
@@ -286,7 +299,7 @@ describe("Platform Program", () => {
         admin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(mintTx, [pairedTokenMint]);
@@ -297,7 +310,7 @@ describe("Platform Program", () => {
       [
         Buffer.from("pair"),
         baseTokenMint.publicKey.toBuffer(),
-        pairedTokenMint.publicKey.toBuffer()
+        pairedTokenMint.publicKey.toBuffer(),
       ],
       program.programId
     );
@@ -330,7 +343,7 @@ describe("Platform Program", () => {
 
     // Create the pair
     await program.methods
-      .createPair(pairName)
+      .createPair()
       .accountsPartial({
         creator: admin.publicKey,
         pair: pairPda,
@@ -353,22 +366,35 @@ describe("Platform Program", () => {
     const pairAccount = await program.account.pair.fetch(pairPda);
 
     // Verify pair data
-    assert.ok(pairAccount.baseTokenMint.equals(baseTokenMint.publicKey),
-      "Base token mint doesn't match");
-    assert.ok(pairAccount.pairedTokenMint.equals(pairedTokenMint.publicKey),
-      "Paired token mint doesn't match");
-    assert.ok(pairAccount.lpMint.equals(lpMintPda),
-      "LP mint doesn't match");
-    assert.ok(pairAccount.baseReserve.eq(new BN(0)),
-      "Base reserve should be 0");
-    assert.ok(pairAccount.pairedReserve.eq(new BN(0)),
-      "Paired reserve should be 0");
-    assert.ok(pairAccount.totalLiquidity.eq(new BN(0)),
-      "Total liquidity should be 0");
-    assert.ok(pairAccount.baseVault.equals(baseVault),
-      "Base vault doesn't match");
-    assert.ok(pairAccount.pairedVault.equals(pairedVault),
-      "Paired vault doesn't match");
+    assert.ok(
+      pairAccount.baseTokenMint.equals(baseTokenMint.publicKey),
+      "Base token mint doesn't match"
+    );
+    assert.ok(
+      pairAccount.pairedTokenMint.equals(pairedTokenMint.publicKey),
+      "Paired token mint doesn't match"
+    );
+    assert.ok(pairAccount.lpMint.equals(lpMintPda), "LP mint doesn't match");
+    assert.ok(
+      pairAccount.baseReserve.eq(new BN(0)),
+      "Base reserve should be 0"
+    );
+    assert.ok(
+      pairAccount.pairedReserve.eq(new BN(0)),
+      "Paired reserve should be 0"
+    );
+    assert.ok(
+      pairAccount.totalLiquidity.eq(new BN(0)),
+      "Total liquidity should be 0"
+    );
+    assert.ok(
+      pairAccount.baseVault.equals(baseVault),
+      "Base vault doesn't match"
+    );
+    assert.ok(
+      pairAccount.pairedVault.equals(pairedVault),
+      "Paired vault doesn't match"
+    );
 
     console.log("✅ Pair account data verified");
   });
@@ -378,7 +404,9 @@ describe("Platform Program", () => {
 
     // Create a new token mint for this test
     const testPairedTokenMint = anchor.web3.Keypair.generate();
-    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+    const mintLamports = await getMinimumBalanceForRentExemptMint(
+      provider.connection
+    );
 
     // Create the test paired token mint
     const mintTx = new anchor.web3.Transaction();
@@ -388,7 +416,7 @@ describe("Platform Program", () => {
         newAccountPubkey: testPairedTokenMint.publicKey,
         lamports: mintLamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         testPairedTokenMint.publicKey,
@@ -396,7 +424,7 @@ describe("Platform Program", () => {
         admin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(mintTx, [testPairedTokenMint]);
@@ -406,7 +434,7 @@ describe("Platform Program", () => {
       [
         Buffer.from("pair"),
         baseTokenMint.publicKey.toBuffer(),
-        testPairedTokenMint.publicKey.toBuffer()
+        testPairedTokenMint.publicKey.toBuffer(),
       ],
       program.programId
     );
@@ -438,7 +466,7 @@ describe("Platform Program", () => {
 
     try {
       await program.methods
-        .createPair("TEST/EXCESSIVE")
+        .createPair()
         .accountsPartial({
           creator: admin.publicKey,
           pair: testPairPda,
@@ -455,7 +483,9 @@ describe("Platform Program", () => {
         .signers([admin])
         .rpc();
 
-      assert.fail("🚨 Creating pair with excessive fee rate should have failed!");
+      assert.fail(
+        "🚨 Creating pair with excessive fee rate should have failed!"
+      );
     } catch (error) {
       console.log("✅ Excessive fee rate was correctly rejected");
     }
@@ -466,7 +496,9 @@ describe("Platform Program", () => {
 
     // Create a new token mint for this test
     const testPairedTokenMint = anchor.web3.Keypair.generate();
-    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+    const mintLamports = await getMinimumBalanceForRentExemptMint(
+      provider.connection
+    );
 
     // Create the test paired token mint
     const mintTx = new anchor.web3.Transaction();
@@ -476,7 +508,7 @@ describe("Platform Program", () => {
         newAccountPubkey: testPairedTokenMint.publicKey,
         lamports: mintLamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         testPairedTokenMint.publicKey,
@@ -484,7 +516,7 @@ describe("Platform Program", () => {
         admin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(mintTx, [testPairedTokenMint]);
@@ -494,7 +526,7 @@ describe("Platform Program", () => {
       [
         Buffer.from("pair"),
         baseTokenMint.publicKey.toBuffer(),
-        testPairedTokenMint.publicKey.toBuffer()
+        testPairedTokenMint.publicKey.toBuffer(),
       ],
       program.programId
     );
@@ -526,7 +558,7 @@ describe("Platform Program", () => {
 
     try {
       await program.methods
-        .createPair("TEST/EXCESSIVE_PROTOCOL")
+        .createPair()
         .accountsPartial({
           creator: admin.publicKey,
           pair: testPairPda,
@@ -543,7 +575,9 @@ describe("Platform Program", () => {
         .signers([admin])
         .rpc();
 
-      assert.fail("🚨 Creating pair with excessive protocol fee rate should have failed!");
+      assert.fail(
+        "🚨 Creating pair with excessive protocol fee rate should have failed!"
+      );
     } catch (error) {
       console.log("✅ Excessive protocol fee rate was correctly rejected");
     }
@@ -555,7 +589,9 @@ describe("Platform Program", () => {
     // Create two new token mints for this test
     const wrongBaseTokenMint = anchor.web3.Keypair.generate();
     const anotherPairedTokenMint = anchor.web3.Keypair.generate();
-    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+    const mintLamports = await getMinimumBalanceForRentExemptMint(
+      provider.connection
+    );
 
     // Create the wrong base token mint
     let mintTx = new anchor.web3.Transaction();
@@ -565,7 +601,7 @@ describe("Platform Program", () => {
         newAccountPubkey: wrongBaseTokenMint.publicKey,
         lamports: mintLamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         wrongBaseTokenMint.publicKey,
@@ -573,7 +609,7 @@ describe("Platform Program", () => {
         admin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(mintTx, [wrongBaseTokenMint]);
@@ -586,7 +622,7 @@ describe("Platform Program", () => {
         newAccountPubkey: anotherPairedTokenMint.publicKey,
         lamports: mintLamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         anotherPairedTokenMint.publicKey,
@@ -594,7 +630,7 @@ describe("Platform Program", () => {
         admin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(mintTx, [anotherPairedTokenMint]);
@@ -604,7 +640,7 @@ describe("Platform Program", () => {
       [
         Buffer.from("pair"),
         wrongBaseTokenMint.publicKey.toBuffer(),
-        anotherPairedTokenMint.publicKey.toBuffer()
+        anotherPairedTokenMint.publicKey.toBuffer(),
       ],
       program.programId
     );
@@ -636,7 +672,7 @@ describe("Platform Program", () => {
 
     try {
       await program.methods
-        .createPair("WRONG/TEST")
+        .createPair()
         .accountsPartial({
           creator: admin.publicKey,
           pair: testPairPda,
@@ -664,7 +700,9 @@ describe("Platform Program", () => {
 
     // Create a new paired token mint
     const duplicatePairedTokenMint = anchor.web3.Keypair.generate();
-    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+    const mintLamports = await getMinimumBalanceForRentExemptMint(
+      provider.connection
+    );
 
     // Create the paired token mint
     const mintTx = new anchor.web3.Transaction();
@@ -674,7 +712,7 @@ describe("Platform Program", () => {
         newAccountPubkey: duplicatePairedTokenMint.publicKey,
         lamports: mintLamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         duplicatePairedTokenMint.publicKey,
@@ -682,7 +720,7 @@ describe("Platform Program", () => {
         admin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(mintTx, [duplicatePairedTokenMint]);
@@ -692,7 +730,7 @@ describe("Platform Program", () => {
       [
         Buffer.from("pair"),
         baseTokenMint.publicKey.toBuffer(),
-        duplicatePairedTokenMint.publicKey.toBuffer()
+        duplicatePairedTokenMint.publicKey.toBuffer(),
       ],
       program.programId
     );
@@ -720,7 +758,7 @@ describe("Platform Program", () => {
 
     // Create the pair first time
     await program.methods
-      .createPair("MOJO/DUPE")
+      .createPair()
       .accountsPartial({
         creator: admin.publicKey,
         pair: pairPda,
@@ -742,7 +780,7 @@ describe("Platform Program", () => {
     // Try to create the same pair again
     try {
       await program.methods
-        .createPair("MOJO/DUPE")
+        .createPair()
         .accountsPartial({
           creator: admin.publicKey,
           pair: pairPda,
@@ -771,7 +809,9 @@ describe("Platform Program", () => {
     // Create two new paired token mints
     const pairedTokenMint1 = anchor.web3.Keypair.generate();
     const pairedTokenMint2 = anchor.web3.Keypair.generate();
-    const mintLamports = await getMinimumBalanceForRentExemptMint(provider.connection);
+    const mintLamports = await getMinimumBalanceForRentExemptMint(
+      provider.connection
+    );
 
     // Create first paired token mint
     let mintTx = new anchor.web3.Transaction();
@@ -781,7 +821,7 @@ describe("Platform Program", () => {
         newAccountPubkey: pairedTokenMint1.publicKey,
         lamports: mintLamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         pairedTokenMint1.publicKey,
@@ -789,7 +829,7 @@ describe("Platform Program", () => {
         admin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(mintTx, [pairedTokenMint1]);
@@ -802,7 +842,7 @@ describe("Platform Program", () => {
         newAccountPubkey: pairedTokenMint2.publicKey,
         lamports: mintLamports,
         space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
+        programId: TOKEN_PROGRAM_ID,
       }),
       createInitializeMint2Instruction(
         pairedTokenMint2.publicKey,
@@ -810,7 +850,7 @@ describe("Platform Program", () => {
         admin.publicKey,
         null,
         TOKEN_PROGRAM_ID
-      )
+      ),
     ];
 
     await provider.sendAndConfirm(mintTx, [pairedTokenMint2]);
@@ -820,7 +860,7 @@ describe("Platform Program", () => {
       [
         Buffer.from("pair"),
         baseTokenMint.publicKey.toBuffer(),
-        pairedTokenMint1.publicKey.toBuffer()
+        pairedTokenMint1.publicKey.toBuffer(),
       ],
       program.programId
     );
@@ -848,7 +888,7 @@ describe("Platform Program", () => {
 
     // Create pair 1
     await program.methods
-      .createPair("MOJO/TOKEN1")
+      .createPair()
       .accountsPartial({
         creator: admin.publicKey,
         pair: pair1Pda,
@@ -872,7 +912,7 @@ describe("Platform Program", () => {
       [
         Buffer.from("pair"),
         baseTokenMint.publicKey.toBuffer(),
-        pairedTokenMint2.publicKey.toBuffer()
+        pairedTokenMint2.publicKey.toBuffer(),
       ],
       program.programId
     );
@@ -900,7 +940,7 @@ describe("Platform Program", () => {
 
     // Create pair 2
     await program.methods
-      .createPair("MOJO/TOKEN2")
+      .createPair()
       .accountsPartial({
         creator: admin.publicKey,
         pair: pair2Pda,
@@ -923,13 +963,97 @@ describe("Platform Program", () => {
     const pair1Account = await program.account.pair.fetch(pair1Pda);
     const pair2Account = await program.account.pair.fetch(pair2Pda);
 
-    assert.ok(pair1Account.pairedTokenMint.equals(pairedTokenMint1.publicKey),
-      "Pair 1 paired mint incorrect");
-    assert.ok(pair2Account.pairedTokenMint.equals(pairedTokenMint2.publicKey),
-      "Pair 2 paired mint incorrect");
+    assert.ok(
+      pair1Account.pairedTokenMint.equals(pairedTokenMint1.publicKey),
+      "Pair 1 paired mint incorrect"
+    );
+    assert.ok(
+      pair2Account.pairedTokenMint.equals(pairedTokenMint2.publicKey),
+      "Pair 2 paired mint incorrect"
+    );
 
     console.log("✅ Multiple pairs verification complete");
   });
+
+  it("it should Swap successfully", async () => {
+    console.log("🧪 Swap token...");
+
+    // Find test pair PDA address with wrong base token
+    const [testPairPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("pair"),
+        baseTokenMint.publicKey.toBuffer(),
+        pairedTokenMint.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+    // Find test vault addresses
+    const testBaseVault = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const testPairedVault = getAssociatedTokenAddressSync(
+      pairedTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const baseTokenAccount = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const pairTokenAccount = getAssociatedTokenAddressSync(
+      pairedTokenMint.publicKey,
+      testPairPda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+    const platformTreasury = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      platformStatePda,
+      true,
+      TOKEN_PROGRAM_ID
+    );
+
+
+
+    // Valid fee rates
+    const inputAmount = 30;
+    const minOutputAmount = 0.02;
+
+    try {
+      await program.methods
+        .swap(new BN(inputAmount), new BN(minOutputAmount))
+        .accountsPartial({
+          user: admin.publicKey,
+          platformTreasury,
+          pair: testPairPda,
+          baseTokenAccount,
+          pairTokenAccount,
+          baseTokenMint: baseTokenMint.publicKey, // Using wrong base token!
+          pairedTokenMint: pairedTokenMint.publicKey,
+          baseVault: testBaseVault,
+          pairedVault: testPairedVault,
+          platformState: platformStatePda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
+
+      console.log("✅ Swap successfull!");
+    } catch (error) {
+      console.log("Error swaping token", error);
+    }
+  });
 });
-
-

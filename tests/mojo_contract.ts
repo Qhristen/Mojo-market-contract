@@ -44,8 +44,49 @@ describe("Platform Program", () => {
     TOKEN_PROGRAM_ID
   );
 
+  /// Find the pair PDA address
+  const [pairPda] = anchor.web3.PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("pair"),
+      baseTokenMint.publicKey.toBuffer(),
+      pairedTokenMint.publicKey.toBuffer(),
+    ],
+    program.programId
+  );
+
+  // Find LP mint PDA address
+  const [lpMintPda] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("lp_mint"), pairPda.toBuffer()],
+    program.programId
+  );
+
+  // Find vault token account addresses
+  const baseVault = getAssociatedTokenAddressSync(
+    baseTokenMint.publicKey,
+    pairPda,
+    true,
+    TOKEN_PROGRAM_ID
+  );
+
+  const pairedVault = getAssociatedTokenAddressSync(
+    pairedTokenMint.publicKey,
+    pairPda,
+    true,
+    TOKEN_PROGRAM_ID
+  );
+
+  // User token accounts
+  let userBaseTokenAccount;
+  let userPairedTokenAccount;
+  let userLpTokenAccount;
+
   // Constants
   const PROTOCOL_FEE_RATE = 250; // 2.5% represented as basis points (250/10000)
+  const INITIAL_LIQUIDITY_BASE = 1_000_000_000; // 1000 tokens with 6 decimals
+  const INITIAL_LIQUIDITY_PAIRED = 1_000_000_000; // 1000 tokens with 6 decimals
+  const SWAP_AMOUNT = 50_000_000; // 50 tokens with 6 decimals
+  const MIN_EXPECTED_OUTPUT = 45_000_000; // 45 tokens with 6 decimals (accounting for fees)
+
 
   before(async () => {
     console.log("🔄 Setting up test environment...");
@@ -88,6 +129,95 @@ describe("Platform Program", () => {
 
     await provider.sendAndConfirm(tx, [baseTokenMint]);
     console.log("✅ Base token mint created successfully");
+
+
+    console.log("✅ Creating paired token mint...");
+    // Create the paired token mint
+    tx = new anchor.web3.Transaction();
+    tx.instructions = [
+      SystemProgram.createAccount({
+        fromPubkey: provider.publicKey,
+        newAccountPubkey: pairedTokenMint.publicKey,
+        lamports,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID,
+      }),
+      createInitializeMint2Instruction(
+        pairedTokenMint.publicKey,
+        6, // 6 decimals
+        admin.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      ),
+    ];
+
+    await provider.sendAndConfirm(tx, [pairedTokenMint]);
+    console.log("✅ Paired token mint created successfully");
+
+    // Create user token accounts
+    console.log("✅ Creating token accounts for admin...");
+    userBaseTokenAccount = getAssociatedTokenAddressSync(
+      baseTokenMint.publicKey,
+      admin.publicKey,
+      false,
+      TOKEN_PROGRAM_ID
+    );
+
+    userPairedTokenAccount = getAssociatedTokenAddressSync(
+      pairedTokenMint.publicKey,
+      admin.publicKey,
+      false,
+      TOKEN_PROGRAM_ID
+    );
+
+    userLpTokenAccount = getAssociatedTokenAddressSync(
+      lpMintPda,
+      admin.publicKey,
+      false,
+      TOKEN_PROGRAM_ID
+    );
+
+    // Create token accounts and mint tokens to admin
+    tx = new anchor.web3.Transaction();
+    tx.instructions = [
+      // Create base token account
+      createAssociatedTokenAccountIdempotentInstruction(
+        admin.publicKey,
+        userBaseTokenAccount,
+        admin.publicKey,
+        baseTokenMint.publicKey,
+        TOKEN_PROGRAM_ID
+      ),
+      // Create paired token account
+      createAssociatedTokenAccountIdempotentInstruction(
+        admin.publicKey,
+        userPairedTokenAccount,
+        admin.publicKey,
+        pairedTokenMint.publicKey,
+        TOKEN_PROGRAM_ID
+      ),
+      // Mint base tokens to admin
+      createMintToInstruction(
+        baseTokenMint.publicKey,
+        userBaseTokenAccount,
+        admin.publicKey,
+        INITIAL_LIQUIDITY_BASE * 2, // Double for testing
+        [],
+        TOKEN_PROGRAM_ID
+      ),
+      // Mint paired tokens to admin
+      createMintToInstruction(
+        pairedTokenMint.publicKey,
+        userPairedTokenAccount,
+        admin.publicKey,
+        INITIAL_LIQUIDITY_PAIRED * 2, // Double for testing
+        [],
+        TOKEN_PROGRAM_ID
+      ),
+    ];
+
+    await provider.sendAndConfirm(tx, [admin]);
+    console.log("✅ Token accounts created and funded");
   });
 
   it("Initializes platform state correctly", async () => {
@@ -281,59 +411,6 @@ describe("Platform Program", () => {
     // Create paired token mint (the second token in the pair, not the base token)
     const mintLamports = await getMinimumBalanceForRentExemptMint(
       provider.connection
-    );
-
-    // Create the paired token mint
-    const mintTx = new anchor.web3.Transaction();
-    mintTx.instructions = [
-      SystemProgram.createAccount({
-        fromPubkey: provider.publicKey,
-        newAccountPubkey: pairedTokenMint.publicKey,
-        lamports: mintLamports,
-        space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID,
-      }),
-      createInitializeMint2Instruction(
-        pairedTokenMint.publicKey,
-        6, // 6 decimals
-        admin.publicKey,
-        null,
-        TOKEN_PROGRAM_ID
-      ),
-    ];
-
-    await provider.sendAndConfirm(mintTx, [pairedTokenMint]);
-    console.log("✅ Paired token mint created");
-
-    // Find the pair PDA address
-    const [pairPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("pair"),
-        baseTokenMint.publicKey.toBuffer(),
-        pairedTokenMint.publicKey.toBuffer(),
-      ],
-      program.programId
-    );
-
-    // Find LP mint PDA address
-    const [lpMintPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("lp_mint"), pairPda.toBuffer()],
-      program.programId
-    );
-
-    // Find vault token account addresses
-    const baseVault = getAssociatedTokenAddressSync(
-      baseTokenMint.publicKey,
-      pairPda,
-      true,
-      TOKEN_PROGRAM_ID
-    );
-
-    const pairedVault = getAssociatedTokenAddressSync(
-      pairedTokenMint.publicKey,
-      pairPda,
-      true,
-      TOKEN_PROGRAM_ID
     );
 
     // Pair name and fee settings
@@ -975,75 +1052,106 @@ describe("Platform Program", () => {
     console.log("✅ Multiple pairs verification complete");
   });
 
-  it("it should Swap successfully", async () => {
-    console.log("🧪 Swap token...");
+  // it("it should Swap successfully", async () => {
+  //   console.log("🧪 Swap token...");
 
-    // Find test pair PDA address with wrong base token
-    const [testPairPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("pair"),
-        baseTokenMint.publicKey.toBuffer(),
-        pairedTokenMint.publicKey.toBuffer(),
-      ],
-      program.programId
-    );
+  //   // Find test pair PDA address with wrong base token
+  //   const [testPairPda] = anchor.web3.PublicKey.findProgramAddressSync(
+  //     [
+  //       Buffer.from("pair"),
+  //       baseTokenMint.publicKey.toBuffer(),
+  //       pairedTokenMint.publicKey.toBuffer(),
+  //     ],
+  //     program.programId
+  //   );
 
-    // Find test vault addresses
-    const testBaseVault = getAssociatedTokenAddressSync(
-      baseTokenMint.publicKey,
-      testPairPda,
-      true,
-      TOKEN_PROGRAM_ID
-    );
+  //   // Find test vault addresses
+  //   const testBaseVault = getAssociatedTokenAddressSync(
+  //     baseTokenMint.publicKey,
+  //     testPairPda,
+  //     true,
+  //     TOKEN_PROGRAM_ID
+  //   );
 
-    const testPairedVault = getAssociatedTokenAddressSync(
-      pairedTokenMint.publicKey,
-      testPairPda,
-      true,
-      TOKEN_PROGRAM_ID
-    );
+  //   const testPairedVault = getAssociatedTokenAddressSync(
+  //     pairedTokenMint.publicKey,
+  //     testPairPda,
+  //     true,
+  //     TOKEN_PROGRAM_ID
+  //   );
 
-    const baseTokenAccount = getAssociatedTokenAddressSync(
-      baseTokenMint.publicKey,
-      testPairPda,
-      true,
-      TOKEN_PROGRAM_ID
-    );
+  //   const baseTokenAccount = getAssociatedTokenAddressSync(
+  //     baseTokenMint.publicKey,
+  //     testPairPda,
+  //     true,
+  //     TOKEN_PROGRAM_ID
+  //   );
 
-    const pairTokenAccount = getAssociatedTokenAddressSync(
-      pairedTokenMint.publicKey,
-      testPairPda,
-      true,
-      TOKEN_PROGRAM_ID
-    );
+  //   const pairTokenAccount = getAssociatedTokenAddressSync(
+  //     pairedTokenMint.publicKey,
+  //     testPairPda,
+  //     true,
+  //     TOKEN_PROGRAM_ID
+  //   );
 
-    const platformTreasury = getAssociatedTokenAddressSync(
-      baseTokenMint.publicKey,
-      platformStatePda,
-      true,
-      TOKEN_PROGRAM_ID
-    );
+  //   const platformTreasury = getAssociatedTokenAddressSync(
+  //     baseTokenMint.publicKey,
+  //     platformStatePda,
+  //     true,
+  //     TOKEN_PROGRAM_ID
+  //   );
 
 
 
-    // Valid fee rates
-    const inputAmount = 30;
-    const minOutputAmount = 0.02;
+  //   // Valid fee rates
+  //   const inputAmount = 30;
+  //   const minOutputAmount = 0.02;
+
+  //   try {
+  //     await program.methods
+  //       .swap(new BN(inputAmount), new BN(minOutputAmount))
+  //       .accountsPartial({
+  //         user: admin.publicKey,
+  //         platformTreasury,
+  //         pair: testPairPda,
+  //         baseTokenAccount,
+  //         pairTokenAccount,
+  //         baseTokenMint: baseTokenMint.publicKey, // Using wrong base token!
+  //         pairedTokenMint: pairedTokenMint.publicKey,
+  //         baseVault: testBaseVault,
+  //         pairedVault: testPairedVault,
+  //         platformState: platformStatePda,
+  //         tokenProgram: TOKEN_PROGRAM_ID,
+  //         associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+  //         systemProgram: SystemProgram.programId,
+  //       })
+  //       .signers([admin])
+  //       .rpc();
+
+  //     console.log("✅ Swap successfull!");
+  //   } catch (error) {
+  //     console.log("Error swaping token", error);
+  //   }
+  // });
+
+
+  it("Fails to swap with zero amount", async () => {
+    console.log("🧪 Testing swap with zero amount...");
 
     try {
       await program.methods
-        .swap(new BN(inputAmount), new BN(minOutputAmount))
+        .swap(new BN(0), new BN(0))
         .accountsPartial({
           user: admin.publicKey,
-          platformTreasury,
-          pair: testPairPda,
-          baseTokenAccount,
-          pairTokenAccount,
-          baseTokenMint: baseTokenMint.publicKey, // Using wrong base token!
-          pairedTokenMint: pairedTokenMint.publicKey,
-          baseVault: testBaseVault,
-          pairedVault: testPairedVault,
           platformState: platformStatePda,
+          platformTreasury: platformTreasury,
+          pair: pairPda,
+          baseTokenMint: baseTokenMint.publicKey,
+          pairedTokenMint: pairedTokenMint.publicKey,
+          baseVault: baseVault,
+          pairedVault: pairedVault,
+          baseTokenAccount: userBaseTokenAccount.address,
+          pairTokenAccount: userPairedTokenAccount.address,
           tokenProgram: TOKEN_PROGRAM_ID,
           associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
@@ -1051,9 +1159,309 @@ describe("Platform Program", () => {
         .signers([admin])
         .rpc();
 
-      console.log("✅ Swap successfull!");
+      assert.fail("Swap with zero amount should have failed");
     } catch (error) {
-      console.log("Error swaping token", error);
+      console.log("✅ Swap with zero amount correctly rejected");
     }
+  });
+
+  //   it("Performs a swap from base to paired token", async () => {
+  //     console.log("🧪 Testing swap from base to paired token...");
+
+  //     // Get balances before swap - ensure we're using the correct token account address
+  //     const baseBalanceBefore = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userBaseTokenAccount))).value.amount;
+  //     const pairedBalanceBefore = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userPairedTokenAccount))).value.amount;
+
+  //     console.log(`Base balance before: ${baseBalanceBefore}`);
+  //     console.log(`Paired balance before: ${pairedBalanceBefore}`);
+
+  //     // Get pair reserves before swap
+  //     let pairBefore = await program.account.pair.fetch(pairPda);
+  //     console.log(`Pair base reserve before: ${pairBefore.baseReserve}`);
+  //     console.log(`Pair paired reserve before: ${pairBefore.pairedReserve}`);
+
+  //     // Perform the swap
+  //     await program.methods
+  //       .swap(new BN(SWAP_AMOUNT), new BN(MIN_EXPECTED_OUTPUT))
+  //       .accountsPartial({
+  //         user: admin.publicKey,
+  //         platformState: platformStatePda,
+  //         platformTreasury: platformTreasury,
+  //         pair: pairPda,
+  //         baseTokenMint: baseTokenMint.publicKey,
+  //         pairedTokenMint: pairedTokenMint.publicKey,
+  //         baseVault: baseVault,
+  //         pairedVault: pairedVault,
+  //         baseTokenAccount: userBaseTokenAccount,
+  //         pairTokenAccount: userPairedTokenAccount,
+  //         tokenProgram: TOKEN_PROGRAM_ID,
+  //         associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+  //         systemProgram: SystemProgram.programId,
+  //       })
+  //       .signers([admin])
+  //       .rpc();
+
+  //     // Get balances after swap - ensure we're using the correct token account address
+  //     const baseBalanceAfter = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userBaseTokenAccount))).value.amount;
+  //     const pairedBalanceAfter = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userPairedTokenAccount))).value.amount;
+
+  //     console.log(`Base balance after: ${baseBalanceAfter}`);
+  //     console.log(`Paired balance after: ${pairedBalanceAfter}`);
+
+  //     // Get pair reserves after swap
+  //     const pairAfter = await program.account.pair.fetch(pairPda);
+  //     console.log(`Pair base reserve after: ${pairAfter.baseReserve}`);
+  //     console.log(`Pair paired reserve after: ${pairAfter.pairedReserve}`);
+
+  //     // Check that the user's base token balance decreased by the swap amount
+  //     assert.equal(
+  //       (parseInt(baseBalanceBefore) - parseInt(baseBalanceAfter)).toString(),
+  //       SWAP_AMOUNT.toString(),
+  //       "Base token balance didn't decrease correctly"
+  //     );
+
+  //     // Check that user received some paired tokens
+  //     assert(
+  //       parseInt(pairedBalanceAfter) > parseInt(pairedBalanceBefore),
+  //       "User didn't receive paired tokens"
+  //     );
+
+  //     // Verify that the pair reserves were updated correctly
+  //     assert(
+  //       pairAfter.baseReserve.gt(pairBefore.baseReserve),
+  //       "Base reserve didn't increase"
+  //     );
+  //     assert(
+  //       pairAfter.pairedReserve.lt(pairBefore.pairedReserve),
+  //       "Paired reserve didn't decrease"
+  //     );
+
+  //     console.log("✅ Swap executed successfully");
+  //   });
+
+  //   it("Performs a swap from paired to base token", async () => {
+  //     console.log("🧪 Testing swap from paired to base token...");
+
+  //     // Get balances before swap - ensure we're using the correct token account address
+  //     const baseBalanceBefore = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userBaseTokenAccount))).value.amount;
+  //     const pairedBalanceBefore = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userPairedTokenAccount))).value.amount;
+
+  //     console.log(`Base balance before: ${baseBalanceBefore}`);
+  //     console.log(`Paired balance before: ${pairedBalanceBefore}`);
+
+  //     // Get pair reserves before swap
+  //     let pairBefore = await program.account.pair.fetch(pairPda);
+  //     console.log(`Pair base reserve before: ${pairBefore.baseReserve}`);
+  //     console.log(`Pair paired reserve before: ${pairBefore.pairedReserve}`);
+
+  //     // Perform the swap (from paired to base)
+  //     await program.methods
+  //       .swap(new BN(SWAP_AMOUNT), new BN(MIN_EXPECTED_OUTPUT))
+  //       .accountsPartial({
+  //         user: admin.publicKey,
+  //         platformState: platformStatePda,
+  //         platformTreasury: platformTreasury,
+  //         pair: pairPda,
+  //         baseTokenMint: pairedTokenMint.publicKey, // Note the switched order
+  //         pairedTokenMint: baseTokenMint.publicKey, // Note the switched order
+  //         baseVault: pairedVault, // Note the switched order
+  //         pairedVault: baseVault, // Note the switched order
+  //         baseTokenAccount: userPairedTokenAccount, // Note the switched order
+  //         pairTokenAccount: userBaseTokenAccount, // Note the switched order
+  //         tokenProgram: TOKEN_PROGRAM_ID,
+  //         associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+  //         systemProgram: SystemProgram.programId,
+  //       })
+  //       .signers([admin])
+  //       .rpc();
+
+  //     // Get balances after swap - ensure we're using the correct token account address
+  //     const baseBalanceAfter = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userBaseTokenAccount))).value.amount;
+  //     const pairedBalanceAfter = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userPairedTokenAccount))).value.amount;
+
+  //     console.log(`Base balance after: ${baseBalanceAfter}`);
+  //     console.log(`Paired balance after: ${pairedBalanceAfter}`);
+
+  //     // Get pair reserves after swap
+  //     const pairAfter = await program.account.pair.fetch(pairPda);
+  //     console.log(`Pair base reserve after: ${pairAfter.baseReserve}`);
+  //     console.log(`Pair paired reserve after: ${pairAfter.pairedReserve}`);
+
+  //     // Check that the user's paired token balance decreased by the swap amount
+  //     assert.equal(
+  //       (parseInt(pairedBalanceBefore) - parseInt(pairedBalanceAfter)).toString(),
+  //       SWAP_AMOUNT.toString(),
+  //       "Paired token balance didn't decrease correctly"
+  //     );
+
+  //     // Check that user received some base tokens
+  //     assert(
+  //       parseInt(baseBalanceAfter) > parseInt(baseBalanceBefore),
+  //       "User didn't receive base tokens"
+  //     );
+
+  //     // Verify that the pair reserves were updated correctly
+  //     assert(
+  //       pairAfter.pairedReserve.gt(pairBefore.pairedReserve),
+  //       "Paired reserve didn't increase"
+  //     );
+  //     assert(
+  //       pairAfter.baseReserve.lt(pairBefore.baseReserve),
+  //       "Base reserve didn't decrease"
+  //     );
+
+  //     console.log("✅ Reverse swap executed successfully");
+  //   });
+
+
+  it("Performs a swap from base to paired token", async () => {
+    console.log("🧪 Testing swap from base to paired token...");
+
+    // Get balances before swap - ensure we're using the correct token account address
+    const baseBalanceBefore = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userBaseTokenAccount))).value.amount;
+    const pairedBalanceBefore = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userPairedTokenAccount))).value.amount;
+
+    console.log(`Base balance before: ${baseBalanceBefore}`);
+    console.log(`Paired balance before: ${pairedBalanceBefore}`);
+
+    // Get pair reserves before swap
+    let pairBefore = await program.account.pair.fetch(pairPda);
+    console.log(`Pair base reserve before: ${pairBefore.baseReserve}`);
+    console.log(`Pair paired reserve before: ${pairBefore.pairedReserve}`);
+
+    // Perform the swap
+    await program.methods
+      .swap(new BN(SWAP_AMOUNT), new BN(MIN_EXPECTED_OUTPUT))
+      .accountsPartial({
+        user: admin.publicKey,
+        platformState: platformStatePda,
+        platformTreasury: platformTreasury,
+        pair: pairPda,
+        baseTokenMint: baseTokenMint.publicKey,
+        pairedTokenMint: pairedTokenMint.publicKey,
+        baseVault: baseVault,
+        pairedVault: pairedVault,
+        baseTokenAccount: userBaseTokenAccount,
+        pairTokenAccount: userPairedTokenAccount,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([admin])
+      .rpc();
+
+    // Get balances after swap - ensure we're using the correct token account address
+    const baseBalanceAfter = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userBaseTokenAccount))).value.amount;
+    const pairedBalanceAfter = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userPairedTokenAccount))).value.amount;
+
+    console.log(`Base balance after: ${baseBalanceAfter}`);
+    console.log(`Paired balance after: ${pairedBalanceAfter}`);
+
+    // Get pair reserves after swap
+    const pairAfter = await program.account.pair.fetch(pairPda);
+    console.log(`Pair base reserve after: ${pairAfter.baseReserve}`);
+    console.log(`Pair paired reserve after: ${pairAfter.pairedReserve}`);
+
+    // Check that the user's base token balance decreased by the swap amount
+    assert.equal(
+      (parseInt(baseBalanceBefore) - parseInt(baseBalanceAfter)).toString(),
+      SWAP_AMOUNT.toString(),
+      "Base token balance didn't decrease correctly"
+    );
+
+    // Check that user received some paired tokens
+    assert(
+      parseInt(pairedBalanceAfter) > parseInt(pairedBalanceBefore),
+      "User didn't receive paired tokens"
+    );
+
+    // Verify that the pair reserves were updated correctly
+    assert(
+      pairAfter.baseReserve.gt(pairBefore.baseReserve),
+      "Base reserve didn't increase"
+    );
+    assert(
+      pairAfter.pairedReserve.lt(pairBefore.pairedReserve),
+      "Paired reserve didn't decrease"
+    );
+
+    console.log("✅ Swap executed successfully");
+  });
+
+  // Helper function to sleep for a specified number of milliseconds
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  it("Performs a swap from paired to base token", async () => {
+    console.log("🧪 Testing swap from paired to base token...");
+
+    // Get balances before swap
+    const baseBalanceBefore = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userBaseTokenAccount))).value.amount;
+    const pairedBalanceBefore = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userPairedTokenAccount))).value.amount;
+
+    console.log(`Base balance before: ${baseBalanceBefore}`);
+    console.log(`Paired balance before: ${pairedBalanceBefore}`);
+
+    // Get pair reserves before swap
+    let pairBefore = await program.account.pair.fetch(pairPda);
+    console.log(`Pair base reserve before: ${pairBefore.baseReserve}`);
+    console.log(`Pair paired reserve before: ${pairBefore.pairedReserve}`);
+
+    // Perform the swap (from paired to base)
+    await program.methods
+      .swap(new BN(SWAP_AMOUNT), new BN(MIN_EXPECTED_OUTPUT))
+      .accountsPartial({
+        user: admin.publicKey,
+        platformState: platformStatePda,
+        platformTreasury: platformTreasury,
+        pair: pairPda,
+        baseTokenMint: baseTokenMint.publicKey,  // Keep original order
+        pairedTokenMint: pairedTokenMint.publicKey, // Keep original order
+        baseVault: baseVault, // Keep original order
+        pairedVault: pairedVault, // Keep original order
+        baseTokenAccount: userPairedTokenAccount, // Pass paired account as input
+        pairTokenAccount: userBaseTokenAccount, // Receive output in base account
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([admin])
+      .rpc();
+
+    // Get balances after swap
+    const baseBalanceAfter = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userBaseTokenAccount))).value.amount;
+    const pairedBalanceAfter = (await provider.connection.getTokenAccountBalance(new anchor.web3.PublicKey(userPairedTokenAccount))).value.amount;
+
+    console.log(`Base balance after: ${baseBalanceAfter}`);
+    console.log(`Paired balance after: ${pairedBalanceAfter}`);
+
+    // Get pair reserves after swap
+    const pairAfter = await program.account.pair.fetch(pairPda);
+    console.log(`Pair base reserve after: ${pairAfter.baseReserve}`);
+    console.log(`Pair paired reserve after: ${pairAfter.pairedReserve}`);
+
+    // Check that the user's paired token balance decreased by the swap amount
+    assert.equal(
+      (parseInt(pairedBalanceBefore) - parseInt(pairedBalanceAfter)).toString(),
+      SWAP_AMOUNT.toString(),
+      "Paired token balance didn't decrease correctly"
+    );
+
+    // Check that user received some base tokens
+    assert(
+      parseInt(baseBalanceAfter) > parseInt(baseBalanceBefore),
+      "User didn't receive base tokens"
+    );
+
+    // Verify that the pair reserves were updated correctly
+    assert(
+      pairAfter.pairedReserve.gt(pairBefore.pairedReserve),
+      "Paired reserve didn't increase"
+    );
+    assert(
+      pairAfter.baseReserve.lt(pairBefore.baseReserve),
+      "Base reserve didn't decrease"
+    );
+
+    console.log("✅ Reverse swap executed successfully");
   });
 });

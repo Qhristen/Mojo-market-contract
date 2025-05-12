@@ -5,14 +5,14 @@ anchor_version = "0.31.1"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
+[programs.devnet]
 mojo_contract = "AMGoaF1FYy6qijdYnLwqQmpxe7eQTVwAy2SvTQbHQcER"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

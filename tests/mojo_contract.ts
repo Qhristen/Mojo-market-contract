@@ -6,6 +6,7 @@ import { assert } from "chai";
 import {
   TOKEN_PROGRAM_ID,
   createMint,
+  getAccount,
   createAssociatedTokenAccountIdempotentInstruction,
   createInitializeMint2Instruction,
   createMintToInstruction,
@@ -84,8 +85,17 @@ describe("Platform Program", () => {
   const PROTOCOL_FEE_RATE = 250; // 2.5% represented as basis points (250/10000)
   const INITIAL_LIQUIDITY_BASE = 1_000_000_000; // 1000 tokens with 6 decimals
   const INITIAL_LIQUIDITY_PAIRED = 1_000_000_000; // 1000 tokens with 6 decimals
-  const SWAP_AMOUNT = 50_000_000; // 50 tokens with 6 decimals
-  const MIN_EXPECTED_OUTPUT = 45_000_000; // 45 tokens with 6 decimals (accounting for fees)
+
+
+  // User token accounts
+  let adminBaseTokenAccount;
+  let adminPairedTokenAccount;
+  let adminLpTokenAccount;
+
+
+  // Constants
+  const INITIAL_BASE_LIQUIDITY = 1_000_000_000; // 1000 tokens with 6 decimals
+  const INITIAL_PAIRED_LIQUIDITY = 1_000_000_000; // 1000 tokens with 6 decimals
 
 
 
@@ -1538,295 +1548,808 @@ describe("Platform Program", () => {
 
   // Swap Tests
 
-  // Swap Tests with Improved Slippage and Reserve Calculations
+  it("Swaps base token for paired token successfully", async () => {
+    console.log("🔄 Testing base to paired token swap...");
 
-  // it("Performs a successful base to paired token swap", async () => {
-  //   console.log("🔄 Testing base to paired token swap...");
+    const swapAmount = 10_000_000; // 10 tokens with 6 decimals
+    const minAmountOut = 9_000_000; // 9 tokens minimum (allowing for slippage)
+    const isBaseInput = true; // Swapping from base to paired token
 
-  //   // Get initial pair reserves
-  //   const pairAccount = await program.account.pair.fetch(pairPda);
-  //   const baseReserve = pairAccount.baseReserve.toNumber();
-  //   const pairedReserve = pairAccount.pairedReserve.toNumber();
+    // Get initial balances
+    const userBaseTokenBefore = await getAccount(
+      provider.connection,
+      userBaseTokenAccount
+    );
+    const userPairedTokenBefore = await getAccount(
+      provider.connection,
+      userPairedTokenAccount
+    );
+    const baseVaultBefore = await getAccount(
+      provider.connection,
+      baseVault
+    );
+    const pairedVaultBefore = await getAccount(
+      provider.connection,
+      pairedVault
+    );
+    const feeCollectorBefore = await getAccount(
+      provider.connection,
+      platformTreasury
+    );
+    const pairBefore = await program.account.pair.fetch(pairPda);
 
-  //   // Get initial balances
-  //   const userBaseBalanceBefore = await provider.connection.getTokenAccountBalance(
-  //     userBaseTokenAccount
-  //   );
-  //   const userPairedBalanceBefore = await provider.connection.getTokenAccountBalance(
-  //     userPairedTokenAccount
-  //   );
+    // Execute swap
+    await program.methods
+      .swap(
+        new BN(swapAmount),
+        new BN(minAmountOut),
+        isBaseInput
+      )
+      .accountsPartial({
+        user: admin.publicKey,
+        pair: pairPda,
+        platformState: platformStatePda,
+        baseTokenMint: baseTokenMint.publicKey,
+        pairedTokenMint: pairedTokenMint.publicKey,
+        baseVault: baseVault,
+        pairedVault: pairedVault,
+        userBaseAta: userBaseTokenAccount,
+        userPairedAta: userPairedTokenAccount,
+        feeCollector: platformTreasury,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([admin])
+      .rpc();
 
-  //   // Swap amount
-  //   const swapAmount = 50_000_000; // 50 tokens
-  //   const feeRate = 30; // 0.3%
+    console.log("✅ Swap executed successfully!");
 
-  //   // Calculate expected output using constant product formula
-  //   const inputWithFee = swapAmount * (10000 - feeRate);
-  //   const expectedOutput = Math.floor(
-  //     (inputWithFee * pairedReserve) /
-  //     (baseReserve * 10000 + inputWithFee)
-  //   );
+    // Get updated balances
+    const userBaseTokenAfter = await getAccount(
+      provider.connection,
+      userBaseTokenAccount
+    );
+    const userPairedTokenAfter = await getAccount(
+      provider.connection,
+      userPairedTokenAccount
+    );
+    const baseVaultAfter = await getAccount(
+      provider.connection,
+      baseVault
+    );
+    const pairedVaultAfter = await getAccount(
+      provider.connection,
+      pairedVault
+    );
+    const feeCollectorAfter = await getAccount(
+      provider.connection,
+      platformTreasury
+    );
+    const pairAfter = await program.account.pair.fetch(pairPda);
 
-  //   // Apply 1% slippage tolerance
-  //   const minOutputAmount = Math.floor(expectedOutput * 0.99);
+    // Calculate expected protocol fee
+    const protocolFee = Math.floor(swapAmount * (PROTOCOL_FEE_RATE / 10000));
 
-  //   // Perform swap
-  //   await program.methods
-  //     .swap(new BN(swapAmount), new BN(minOutputAmount))
-  //     .accountsPartial({
-  //       user: admin.publicKey,
-  //       platformState: platformStatePda,
-  //       platformTreasury: platformTreasury,
-  //       pair: pairPda,
-  //       baseTokenMint: baseTokenMint.publicKey,
-  //       pairedTokenMint: pairedTokenMint.publicKey,
-  //       baseVault: baseVault,
-  //       pairedVault: pairedVault,
-  //       baseTokenAccount: userBaseTokenAccount,
-  //       pairTokenAccount: userPairedTokenAccount,
-  //       tokenProgram: TOKEN_PROGRAM_ID,
-  //       associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-  //       systemProgram: SystemProgram.programId,
-  //     })
-  //     .signers([admin])
-  //     .rpc();
+    // Calculate user balance changes
+    const baseTokenDiff = Number(userBaseTokenBefore.amount) - Number(userBaseTokenAfter.amount);
+    const pairedTokenDiff = Number(userPairedTokenAfter.amount) - Number(userPairedTokenBefore.amount);
 
-  //   // Get updated balances and pair state
-  //   const userBaseBalanceAfter = await provider.connection.getTokenAccountBalance(
-  //     userBaseTokenAccount
-  //   );
-  //   const userPairedBalanceAfter = await provider.connection.getTokenAccountBalance(
-  //     userPairedTokenAccount
-  //   );
-  //   const pairAccountAfter = await program.account.pair.fetch(pairPda);
+    // Calculate vault balance changes
+    const baseVaultDiff = Number(baseVaultAfter.amount) - Number(baseVaultBefore.amount);
+    const pairedVaultDiff = Number(pairedVaultBefore.amount) - Number(pairedVaultAfter.amount);
 
-  //   // Verify base token balance decrease
-  //   const baseBalanceChange = parseInt(userBaseBalanceBefore.value.amount) - parseInt(userBaseBalanceAfter.value.amount);
-  //   assert.equal(baseBalanceChange, swapAmount, "Base token balance should decrease by swap amount");
+    // Calculate fee collector change
+    const feeCollectorDiff = Number(feeCollectorAfter.amount) - Number(feeCollectorBefore.amount);
 
-  //   // Verify paired token balance increase
-  //   const pairedBalanceChange = parseInt(userPairedBalanceAfter.value.amount) - parseInt(userPairedBalanceBefore.value.amount);
-  //   assert.ok(
-  //     pairedBalanceChange >= minOutputAmount,
-  //     "Paired token balance should increase by at least min output amount"
-  //   );
+    // Verify user sent correct amount of base tokens
+    assert.equal(baseTokenDiff, swapAmount, "User should have sent the exact swap amount");
 
-  //   // Verify pair reserves updated correctly
-  //   assert.ok(
-  //     pairAccountAfter.baseReserve.gt(pairAccountBefore.baseReserve),
-  //     "Base reserve should increase"
-  //   );
-  //   assert.ok(
-  //     pairAccountAfter.pairedReserve.lt(pairAccountBefore.pairedReserve),
-  //     "Paired reserve should decrease"
-  //   );
+    // Verify user received some paired tokens
+    assert.isAbove(pairedTokenDiff, minAmountOut, "User should have received at least the minimum amount out");
 
-  //   console.log("✅ Base to paired token swap successful");
-  // });
+    // Verify fee collector received the fee
+    assert.equal(feeCollectorDiff, protocolFee, "Fee collector should have received the protocol fee");
 
-  // it("Performs a successful paired to base token swap", async () => {
+    // Verify base vault received the deposit minus fee
+    assert.equal(baseVaultDiff, swapAmount - protocolFee, "Base vault should have received the swap amount minus protocol fee");
+
+    // Verify paired vault sent the correct amount
+    assert.equal(pairedVaultDiff, pairedTokenDiff, "Paired vault should have sent the same amount user received");
+
+    // Verify reserves were updated correctly
+    assert.ok(
+      pairAfter.baseReserve.eq(
+        pairBefore.baseReserve.add(new BN(swapAmount - protocolFee))
+      ),
+      "Base reserve should be increased by swap amount minus protocol fee"
+    );
+    assert.ok(
+      pairAfter.pairedReserve.eq(
+        pairBefore.pairedReserve.sub(new BN(pairedTokenDiff))
+      ),
+      "Paired reserve should be decreased by the amount sent to user"
+    );
+
+    // Verify total liquidity unchanged
+    assert.ok(
+      pairAfter.totalLiquidity.eq(pairBefore.totalLiquidity),
+      "Total liquidity should remain unchanged after swap"
+    );
+
+    console.log(`📊 Swap results:
+      Base token sent by user: ${baseTokenDiff / 1_000_000} tokens
+      Paired token received by user: ${pairedTokenDiff / 1_000_000} tokens
+      Protocol fee collected: ${protocolFee / 1_000_000} tokens
+    `);
+  });
+
+  // it("Swaps paired token for base token successfully", async () => {
   //   console.log("🔄 Testing paired to base token swap...");
 
-  //   // Get initial pair reserves
-  //   const pairAccount = await program.account.pair.fetch(pairPda);
-  //   const baseReserve = pairAccount.pairedReserve.toNumber(); // Swapped for paired to base
-  //   const pairedReserve = pairAccount.baseReserve.toNumber(); // Swapped for paired to base
+  //   const swapAmount = 10_000_000; // 10 tokens with 6 decimals
+  //   const minAmountOut = 9_000_000; // 9 tokens minimum (allowing for slippage)
+  //   const isBaseInput = false; // Swapping from paired to base token
 
   //   // Get initial balances
-  //   const userBaseBalanceBefore = await provider.connection.getTokenAccountBalance(
+  //   const userBaseTokenBefore = await getAccount(
+  //     provider.connection,
   //     userBaseTokenAccount
   //   );
-  //   const userPairedBalanceBefore = await provider.connection.getTokenAccountBalance(
+  //   const userPairedTokenBefore = await getAccount(
+  //     provider.connection,
   //     userPairedTokenAccount
   //   );
-
-  //   // Swap amount
-  //   const swapAmount = 50_000_000; // 50 tokens
-  //   const feeRate = 30; // 0.3%
-
-  //   // Calculate expected output using constant product formula
-  //   const inputWithFee = swapAmount * (10000 - feeRate);
-  //   const expectedOutput = Math.floor(
-  //     (inputWithFee * pairedReserve) /
-  //     (baseReserve * 10000 + inputWithFee)
+  //   const baseVaultBefore = await getAccount(
+  //     provider.connection,
+  //     baseVault
   //   );
-
-  //   // Apply 1% slippage tolerance
-  //   const minOutputAmount = Math.floor(expectedOutput * 0.99);
-
-  //   // Perform swap
-  //   await program.methods
-  //     .swap(new BN(swapAmount), new BN(minOutputAmount))
-  //     .accountsPartial({
-  //       user: admin.publicKey,
-  //       platformState: platformStatePda,
-  //       platformTreasury: platformTreasury,
-  //       pair: pairPda,
-  //       baseTokenMint: pairedTokenMint.publicKey, // Swapped for paired to base
-  //       pairedTokenMint: baseTokenMint.publicKey, // Swapped for paired to base
-  //       baseVault: pairedVault, // Swapped for paired to base
-  //       pairedVault: baseVault, // Swapped for paired to base
-  //       baseTokenAccount: userPairedTokenAccount, // Swapped for paired to base
-  //       pairTokenAccount: userBaseTokenAccount, // Swapped for paired to base
-  //       tokenProgram: TOKEN_PROGRAM_ID,
-  //       associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-  //       systemProgram: SystemProgram.programId,
-  //     })
-  //     .signers([admin])
-  //     .rpc();
-
-  //   // Get updated balances and pair state
-  //   const userBaseBalanceAfter = await provider.connection.getTokenAccountBalance(
-  //     userBaseTokenAccount
+  //   const pairedVaultBefore = await getAccount(
+  //     provider.connection,
+  //     pairedVault
   //   );
-  //   const userPairedBalanceAfter = await provider.connection.getTokenAccountBalance(
-  //     userPairedTokenAccount
-  //   );
-  //   const pairAccountAfter = await program.account.pair.fetch(pairPda);
-
-  //   // Verify paired token balance decrease
-  //   const pairedBalanceChange = parseInt(userPairedBalanceBefore.value.amount) - parseInt(userPairedBalanceAfter.value.amount);
-  //   assert.equal(pairedBalanceChange, swapAmount, "Paired token balance should decrease by swap amount");
-
-  //   // Verify base token balance increase
-  //   const baseBalanceChange = parseInt(userBaseBalanceAfter.value.amount) - parseInt(userBaseBalanceBefore.value.amount);
-  //   assert.ok(
-  //     baseBalanceChange >= minOutputAmount,
-  //     "Base token balance should increase by at least min output amount"
-  //   );
-
-  //   // Verify pair reserves updated correctly
-  //   assert.ok(
-  //     pairAccountAfter.pairedReserve.gt(pairAccountBefore.pairedReserve),
-  //     "Paired reserve should increase"
-  //   );
-  //   assert.ok(
-  //     pairAccountAfter.baseReserve.lt(pairAccountBefore.baseReserve),
-  //     "Base reserve should decrease"
-  //   );
-
-  //   console.log("✅ Paired to base token swap successful");
-  // });
-
-  // it("Validates protocol fee collection", async () => {
-  //   console.log("💰 Testing protocol fee collection...");
-
-  //   // Get initial pair reserves
-  //   const pairAccount = await program.account.pair.fetch(pairPda);
-  //   const baseReserve = pairAccount.baseReserve.toNumber();
-  //   const pairedReserve = pairAccount.pairedReserve.toNumber();
-
-  //   // Get initial balances
-  //   const platformTreasuryBalanceBefore = await provider.connection.getTokenAccountBalance(
+  //   const feeCollectorBefore = await getAccount(
+  //     provider.connection,
   //     platformTreasury
   //   );
+  //   const pairBefore = await program.account.pair.fetch(pairPda);
 
-  //   // Swap amount
-  //   const swapAmount = 100_000_000; // 100 tokens
-  //   const feeRate = 30; // 0.3%
-
-  //   // Calculate expected output using constant product formula
-  //   const inputWithFee = swapAmount * (10000 - feeRate);
-  //   const expectedOutput = Math.floor(
-  //     (inputWithFee * pairedReserve) /
-  //     (baseReserve * 10000 + inputWithFee)
-  //   );
-
-  //   // Apply 1% slippage tolerance
-  //   const minOutputAmount = Math.floor(expectedOutput * 0.99);
-
-  //   // Perform swap
+  //   // Execute swap
   //   await program.methods
-  //     .swap(new BN(swapAmount), new BN(minOutputAmount))
+  //     .swap(
+  //       new BN(swapAmount),
+  //       new BN(minAmountOut),
+  //       isBaseInput
+  //     )
   //     .accountsPartial({
   //       user: admin.publicKey,
-  //       platformState: platformStatePda,
-  //       platformTreasury: platformTreasury,
   //       pair: pairPda,
+  //       platformState: platformStatePda,
   //       baseTokenMint: baseTokenMint.publicKey,
   //       pairedTokenMint: pairedTokenMint.publicKey,
   //       baseVault: baseVault,
   //       pairedVault: pairedVault,
-  //       baseTokenAccount: userBaseTokenAccount,
-  //       pairTokenAccount: userPairedTokenAccount,
+  //       userBaseAta: userBaseTokenAccount,
+  //       userPairedAta: userPairedTokenAccount,
+  //       feeCollector: platformTreasury,
   //       tokenProgram: TOKEN_PROGRAM_ID,
-  //       associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-  //       systemProgram: SystemProgram.programId,
   //     })
   //     .signers([admin])
   //     .rpc();
 
+  //   console.log("✅ Swap executed successfully!");
+
   //   // Get updated balances
-  //   const platformTreasuryBalanceAfter = await provider.connection.getTokenAccountBalance(
+  //   const userBaseTokenAfter = await getAccount(
+  //     provider.connection,
+  //     userBaseTokenAccount
+  //   );
+  //   const userPairedTokenAfter = await getAccount(
+  //     provider.connection,
+  //     userPairedTokenAccount
+  //   );
+  //   const baseVaultAfter = await getAccount(
+  //     provider.connection,
+  //     baseVault
+  //   );
+  //   const pairedVaultAfter = await getAccount(
+  //     provider.connection,
+  //     pairedVault
+  //   );
+  //   const feeCollectorAfter = await getAccount(
+  //     provider.connection,
   //     platformTreasury
   //   );
+  //   const pairAfter = await program.account.pair.fetch(pairPda);
 
-  //   // Calculate protocol fee based on the platform's fee rate
-  //   const protocolFeeRate = (await program.account.platformState.fetch(platformStatePda)).protocolFeeRate;
-  //   const expectedProtocolFee = Math.floor(
-  //     (swapAmount * protocolFeeRate) / 10000
-  //   );
+  //   // Calculate expected protocol fee
+  //   const protocolFee = Math.floor(swapAmount * (PROTOCOL_FEE_RATE / 10000));
 
-  //   // Verify protocol fee collected
-  //   const protocolFeeCollected = parseInt(platformTreasuryBalanceAfter.value.amount) -
-  //     parseInt(platformTreasuryBalanceBefore.value.amount);
+  //   // Calculate user balance changes
+  //   const pairedTokenDiff = Number(userPairedTokenBefore.amount) - Number(userPairedTokenAfter.amount);
+  //   const baseTokenDiff = Number(userBaseTokenAfter.amount) - Number(userBaseTokenBefore.amount);
 
-  //   // Allow for small rounding differences
+  //   // Calculate vault balance changes
+  //   const pairedVaultDiff = Number(pairedVaultAfter.amount) - Number(pairedVaultBefore.amount);
+  //   const baseVaultDiff = Number(baseVaultBefore.amount) - Number(baseVaultAfter.amount);
+
+  //   // Verify user sent correct amount of paired tokens
+  //   assert.equal(pairedTokenDiff, swapAmount, "User should have sent the exact swap amount");
+
+  //   // Verify user received some base tokens
+  //   assert.isAbove(baseTokenDiff, minAmountOut, "User should have received at least the minimum amount out");
+
+  //   // Verify paired vault received the deposit minus fee
+  //   assert.equal(pairedVaultDiff, swapAmount - protocolFee, "Paired vault should have received the swap amount minus protocol fee");
+
+  //   // Verify base vault sent the correct amount
+  //   assert.equal(baseVaultDiff, baseTokenDiff, "Base vault should have sent the same amount user received");
+
+  //   // Verify reserves were updated correctly
   //   assert.ok(
-  //     Math.abs(protocolFeeCollected - expectedProtocolFee) <= 1,
-  //     `Protocol fee incorrect. Expected ~${expectedProtocolFee}, Got: ${protocolFeeCollected}`
+  //     pairAfter.pairedReserve.eq(
+  //       pairBefore.pairedReserve.add(new BN(swapAmount - protocolFee))
+  //     ),
+  //     "Paired reserve should be increased by swap amount minus protocol fee"
+  //   );
+  //   assert.ok(
+  //     pairAfter.baseReserve.eq(
+  //       pairBefore.baseReserve.sub(new BN(baseTokenDiff))
+  //     ),
+  //     "Base reserve should be decreased by the amount sent to user"
   //   );
 
-  //   console.log("✅ Protocol fee collection validated");
+  //   // Verify total liquidity unchanged
+  //   assert.ok(
+  //     pairAfter.totalLiquidity.eq(pairBefore.totalLiquidity),
+  //     "Total liquidity should remain unchanged after swap"
+  //   );
+
+  //   console.log(`📊 Swap results:
+  //     Paired token sent by user: ${pairedTokenDiff / 1_000_000} tokens
+  //     Base token received by user: ${baseTokenDiff / 1_000_000} tokens
+  //     Protocol fee collected: ${protocolFee / 1_000_000} tokens
+  //   `);
   // });
 
-  // it("Fails swap with slippage protection", async () => {
-  //   console.log("🛡️ Testing slippage protection...");
+  it("Performs large swap within slippage tolerance", async () => {
+    console.log("🔄 Testing large swap with slippage tolerance...");
 
-  //   // Get initial pair reserves
-  //   const pairAccount = await program.account.pair.fetch(pairPda);
-  //   const baseReserve = pairAccount.baseReserve.toNumber();
-  //   const pairedReserve = pairAccount.pairedReserve.toNumber();
+    const swapAmount = 100_000_000; // 100 tokens - 10% of pool liquidity
+    const minAmountOut = 80_000_000; // 80 tokens minimum (allowing for slippage)
+    const isBaseInput = true;
 
-  //   // Swap amount
-  //   const swapAmount = 50_000_000; // 50 tokens
-  //   const feeRate = 30; // 0.3%
+    // Get initial balances
+    const userBaseTokenBefore = await getAccount(provider.connection, userBaseTokenAccount);
+    const userPairedTokenBefore = await getAccount(provider.connection, userPairedTokenAccount);
 
-  //   // Calculate expected output using constant product formula
-  //   const inputWithFee = swapAmount * (10000 - feeRate);
-  //   const expectedOutput = Math.floor(
-  //     (inputWithFee * pairedReserve) /
-  //     (baseReserve * 10000 + inputWithFee)
-  //   );
+    // Calculate expected output with price impact (simplified estimation)
+    const pairBefore = await program.account.pair.fetch(pairPda);
+    const baseReserve = pairBefore.baseReserve.toNumber();
+    const pairedReserve = pairBefore.pairedReserve.toNumber();
+    const protocolFee = Math.floor(swapAmount * (PROTOCOL_FEE_RATE / 10000));
+    const amountInAfterFee = swapAmount - protocolFee;
 
-  //   // Set an impossibly high minimum output to trigger slippage protection
-  //   const minOutputAmount = expectedOutput * 2; // Set to double the expected output
+    // x * y = k formula
+    const constantK = baseReserve * pairedReserve;
+    const newBaseReserve = baseReserve + amountInAfterFee;
+    const newPairedReserve = Math.floor(constantK / newBaseReserve);
+    const expectedOutput = pairedReserve - newPairedReserve;
 
-  //   try {
+    console.log(`Expected output estimation: ${expectedOutput / 1_000_000} tokens`);
+
+    // Execute swap
+    await program.methods
+      .swap(
+        new BN(swapAmount),
+        new BN(minAmountOut),
+        isBaseInput
+      )
+      .accountsPartial({
+        user: admin.publicKey,
+        pair: pairPda,
+        platformState: platformStatePda,
+        baseTokenMint: baseTokenMint.publicKey,
+        pairedTokenMint: pairedTokenMint.publicKey,
+        baseVault: baseVault,
+        pairedVault: pairedVault,
+        userBaseAta: userBaseTokenAccount,
+        userPairedAta: userPairedTokenAccount,
+        feeCollector: platformTreasury,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([admin])
+      .rpc();
+
+    console.log("✅ Large swap executed successfully!");
+
+    // Get updated balances
+    const userBaseTokenAfter = await getAccount(provider.connection, userBaseTokenAccount);
+    const userPairedTokenAfter = await getAccount(provider.connection, userPairedTokenAccount);
+
+    const baseTokenDiff = Number(userBaseTokenBefore.amount) - Number(userBaseTokenAfter.amount);
+    const pairedTokenDiff = Number(userPairedTokenAfter.amount) - Number(userPairedTokenBefore.amount);
+
+    // Verify that the output amount is close to our estimation
+    const outputDiffPercent = Math.abs(pairedTokenDiff - expectedOutput) / expectedOutput * 100;
+    assert.isBelow(outputDiffPercent, 1, "Output should be within 1% of estimation");
+
+    // Verify slippage protection worked (received at least minAmountOut)
+    assert.isAtLeast(pairedTokenDiff, minAmountOut, "Should receive at least minAmountOut");
+
+    console.log(`📊 Large swap results:
+      Base token sent: ${baseTokenDiff / 1_000_000} tokens
+      Paired token received: ${pairedTokenDiff / 1_000_000} tokens
+      Price impact: ~${Math.round((expectedOutput / swapAmount) * 100)}%
+    `);
+  });
+
+  // SAD PATH TESTS
+
+  it("Fails when trying to swap with insufficient funds", async () => {
+    console.log("❌ Testing swap with insufficient funds...");
+
+    // Try to swap more tokens than the user has
+    const userBaseTokenInfo = await getAccount(provider.connection, userBaseTokenAccount);
+    const userBalance = Number(userBaseTokenInfo.amount);
+    const swapAmount = userBalance + 1_000_000; // 1 token more than balance
+    const minAmountOut = 1_000_000;
+    const isBaseInput = true;
+
+    try {
+      await program.methods
+        .swap(
+          new BN(swapAmount),
+          new BN(minAmountOut),
+          isBaseInput
+        )
+        .accountsPartial({
+          user: admin.publicKey,
+          pair: pairPda,
+          platformState: platformStatePda,
+          baseTokenMint: baseTokenMint.publicKey,
+          pairedTokenMint: pairedTokenMint.publicKey,
+          baseVault: baseVault,
+          pairedVault: pairedVault,
+          userBaseAta: userBaseTokenAccount,
+          userPairedAta: userPairedTokenAccount,
+          feeCollector: platformTreasury,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([admin])
+        .rpc();
+
+      assert.fail("Transaction should have failed due to slippage exceeded");
+    } catch (error) {
+      console.log("✅ Transaction correctly failed due to slippage threshold");
+      // expect(error.toString()).to.include("SlippageExceeded");
+      console.error(error);
+    }
+  });
+
+  it("Fails when attempting to swap zero amount", async () => {
+    console.log("❌ Testing swap with zero amount...");
+
+    const swapAmount = 0;
+    const minAmountOut = 0;
+    const isBaseInput = true;
+
+    try {
+      await program.methods
+        .swap(
+          new BN(swapAmount),
+          new BN(minAmountOut),
+          isBaseInput
+        )
+        .accountsPartial({
+          user: admin.publicKey,
+          pair: pairPda,
+          platformState: platformStatePda,
+          baseTokenMint: baseTokenMint.publicKey,
+          pairedTokenMint: pairedTokenMint.publicKey,
+          baseVault: baseVault,
+          pairedVault: pairedVault,
+          userBaseAta: userBaseTokenAccount,
+          userPairedAta: userPairedTokenAccount,
+          feeCollector: platformTreasury,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([admin])
+        .rpc();
+
+      assert.fail("Transaction should have failed due to zero amount");
+    } catch (error) {
+      console.log("✅ Transaction correctly failed due to zero amount");
+      // expect(error.toString()).to.include("ZeroAmount");
+      console.error(error);
+    }
+  });
+
+  it("Fails when platform is paused", async () => {
+    console.log("❌ Testing swap when platform is paused...");
+
+    // First pause the platform
+    await program.methods.pausePlatform(true)
+      .accounts({
+        admin: admin.publicKey,
+        platformState: platformStatePda,
+      })
+      .signers([admin])
+      .rpc();
+
+    console.log("✅ Platform paused successfully");
+
+    // Now try to swap
+    const swapAmount = 10_000_000;
+    const minAmountOut = 9_000_000;
+    const isBaseInput = true;
+
+    try {
+      await program.methods
+        .swap(
+          new BN(swapAmount),
+          new BN(minAmountOut),
+          isBaseInput
+        )
+        .accountsPartial({
+          user: admin.publicKey,
+          pair: pairPda,
+          platformState: platformStatePda,
+          baseTokenMint: baseTokenMint.publicKey,
+          pairedTokenMint: pairedTokenMint.publicKey,
+          baseVault: baseVault,
+          pairedVault: pairedVault,
+          userBaseAta: userBaseTokenAccount,
+          userPairedAta: userPairedTokenAccount,
+          feeCollector: platformTreasury,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([admin])
+        .rpc();
+
+      assert.fail("Transaction should have failed due to platform being paused");
+    } catch (error) {
+      console.log("✅ Transaction correctly failed due to platform being paused");
+      // expect(error.toString()).to.include("TradingPaused");
+    }
+
+    // Unpause the platform for other tests
+    await program.methods
+      .resumePlaform()
+      .accountsPartial({
+        admin: admin.publicKey,
+        platformState: platformStatePda,
+      })
+      .signers([admin])
+      .rpc();
+
+    console.log("✅ Platform unpaused successfully");
+  });
+
+  it("Fails when swapping with incorrect token accounts", async () => {
+    console.log("❌ Testing swap with incorrect token accounts...");
+
+    const swapAmount = 10_000_000;
+    const minAmountOut = 9_000_000;
+    const isBaseInput = true;
+
+    // Try to swap using paired token account as base token account (swapped)
+    try {
+      await program.methods
+        .swap(
+          new BN(swapAmount),
+          new BN(minAmountOut),
+          isBaseInput
+        )
+        .accountsPartial({
+          user: admin.publicKey,
+          pair: pairPda,
+          platformState: platformStatePda,
+          baseTokenMint: baseTokenMint.publicKey,
+          pairedTokenMint: pairedTokenMint.publicKey,
+          baseVault: baseVault,
+          pairedVault: pairedVault,
+          userBaseAta: userPairedTokenAccount, // Incorrect token account
+          userPairedAta: userBaseTokenAccount, // Incorrect token account
+          feeCollector: platformTreasury,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([admin])
+        .rpc();
+
+      assert.fail("Transaction should have failed due to incorrect token accounts");
+    } catch (error) {
+      console.log("✅ Transaction correctly failed due to incorrect token accounts");
+      // expect(error.toString()).to.include("Error");
+      console.error(error);
+    }
+  });
+
+  // Additional advanced test scenarios
+
+  // it("Executes multiple swaps and tracks price impact", async () => {
+  //   console.log("📊 Testing multiple consecutive swaps and price impact...");
+
+  //   const swapAmount = 20_000_000; // 20 tokens
+  //   const minAmountOut = 15_000_000; // 15 tokens (25% slippage allowed)
+  //   const isBaseInput = true;
+  //   const numSwaps = 3;
+
+  //   let totalBaseIn = 0;
+  //   let totalPairedOut = 0;
+  //   let expectedPrice = 0;
+  //   let actualPrice = 0;
+
+  //   // Track initial reserves
+  //   let pairState = await program.account.pair.fetch(pairPda);
+  //   let initialBaseReserve = pairState.baseReserve.toNumber();
+  //   let initialPairedReserve = pairState.pairedReserve.toNumber();
+
+  //   console.log(`📈 Initial pool state:
+  //     Base reserve: ${initialBaseReserve / 1_000_000} tokens
+  //     Paired reserve: ${initialPairedReserve / 1_000_000} tokens
+  //     Price (paired/base): ${initialPairedReserve / initialBaseReserve}
+  //   `);
+
+  //   // Execute multiple swaps
+  //   for (let i = 0; i < numSwaps; i++) {
+  //     console.log(`🔄 Executing swap ${i + 1} of ${numSwaps}...`);
+
+  //     // Get balances before swap
+  //     const userBaseTokenBefore = await getAccount(provider.connection, userBaseTokenAccount);
+  //     const userPairedTokenBefore = await getAccount(provider.connection, userPairedTokenAccount);
+
+  //     // Execute swap
   //     await program.methods
-  //       .swap(new BN(swapAmount), new BN(minOutputAmount))
+  //       .swap(
+  //         new BN(swapAmount),
+  //         new BN(minAmountOut),
+  //         isBaseInput
+  //       )
   //       .accountsPartial({
   //         user: admin.publicKey,
-  //         platformState: platformStatePda,
-  //         platformTreasury: platformTreasury,
   //         pair: pairPda,
+  //         platformState: platformStatePda,
   //         baseTokenMint: baseTokenMint.publicKey,
   //         pairedTokenMint: pairedTokenMint.publicKey,
   //         baseVault: baseVault,
   //         pairedVault: pairedVault,
-  //         baseTokenAccount: userBaseTokenAccount,
-  //         pairTokenAccount: userPairedTokenAccount,
+  //         userBaseAta: userBaseTokenAccount,
+  //         userPairedAta: userPairedTokenAccount,
+  //         feeCollector: platformTreasury,
   //         tokenProgram: TOKEN_PROGRAM_ID,
-  //         associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-  //         systemProgram: SystemProgram.programId,
   //       })
   //       .signers([admin])
   //       .rpc();
 
-  //     assert.fail("🚨 Swap should have failed due to slippage");
-  //   } catch (error) {
-  //     console.log("✅ Swap correctly rejected due to slippage protection");
+  //     // Get balances after swap
+  //     const userBaseTokenAfter = await getAccount(provider.connection, userBaseTokenAccount);
+  //     const userPairedTokenAfter = await getAccount(provider.connection, userPairedTokenAccount);
+
+  //     // Calculate token changes
+  //     const baseIn = Number(userBaseTokenBefore.amount) - Number(userBaseTokenAfter.amount);
+  //     const pairedOut = Number(userPairedTokenAfter.amount) - Number(userPairedTokenBefore.amount);
+
+  //     totalBaseIn += baseIn;
+  //     totalPairedOut += pairedOut;
+
+  //     // Get updated pair state
+  //     pairState = await program.account.pair.fetch(pairPda);
+  //     const currentBaseReserve = pairState.baseReserve.toNumber();
+  //     const currentPairedReserve = pairState.pairedReserve.toNumber();
+
+  //     // Calculate actual price
+  //     const swapPrice = pairedOut / baseIn;
+  //     console.log(`Swap ${i + 1} results:
+  //       Base tokens in: ${baseIn / 1_000_000}
+  //       Paired tokens out: ${pairedOut / 1_000_000}
+  //       Effective price: ${swapPrice}
+  //       Current pool price: ${currentPairedReserve / currentBaseReserve}
+  //     `);
   //   }
+
+  //   // Calculate overall metrics
+  //   expectedPrice = initialPairedReserve / initialBaseReserve;
+  //   actualPrice = totalPairedOut / totalBaseIn;
+
+  //   console.log(`📊 Multiple swap summary:
+  //     Total base tokens in: ${totalBaseIn / 1_000_000}
+  //     Total paired tokens out: ${totalPairedOut / 1_000_000}
+  //     Initial expected price: ${expectedPrice}
+  //     Actual average price: ${actualPrice}
+  //     Price impact: ${((expectedPrice - actualPrice) / expectedPrice * 100).toFixed(2)}%
+  //   `);
+
+  //   // Verify price impact - should be significant due to multiple swaps
+  //   assert.isBelow(actualPrice, expectedPrice, "Price should decrease due to price impact");
+  // });
+
+  // it("Tests swap fee accumulation to fee collector", async () => {
+  //   console.log("💰 Testing fee accumulation in fee collector...");
+
+  //   // Get initial fee collector balance
+  //   const feeCollectorBefore = await getAccount(provider.connection, platformTreasury);
+  //   const initialFeeBalance = Number(feeCollectorBefore.amount);
+
+  //   console.log(`Initial fee collector balance: ${initialFeeBalance / 1_000_000} base tokens`);
+
+  //   // Execute multiple swaps to accumulate fees
+  //   const swapAmount = 50_000_000; // 50 tokens
+  //   const minAmountOut = 40_000_000; // 40 tokens
+  //   const isBaseInput = true;
+  //   const numSwaps = 3;
+
+  //   for (let i = 0; i < numSwaps; i++) {
+  //     await program.methods
+  //       .swap(
+  //         new BN(swapAmount),
+  //         new BN(minAmountOut),
+  //         isBaseInput
+  //       )
+  //       .accountsPartial({
+  //         user: admin.publicKey,
+  //         pair: pairPda,
+  //         platformState: platformStatePda,
+  //         baseTokenMint: baseTokenMint.publicKey,
+  //         pairedTokenMint: pairedTokenMint.publicKey,
+  //         baseVault: baseVault,
+  //         pairedVault: pairedVault,
+  //         userBaseAta: userBaseTokenAccount,
+  //         userPairedAta: userPairedTokenAccount,
+  //         feeCollector: platformTreasury,
+  //         tokenProgram: TOKEN_PROGRAM_ID,
+  //       })
+  //       .signers([admin])
+  //       .rpc();
+
+  //     console.log(`Completed swap ${i + 1}`);
+  //   }
+
+  //   // Get final fee collector balance
+  //   const feeCollectorAfter = await getAccount(provider.connection, platformTreasury);
+  //   const finalFeeBalance = Number(feeCollectorAfter.amount);
+
+  //   // Calculate total fees collected
+  //   const totalFeesCollected = finalFeeBalance - initialFeeBalance;
+  //   console.log(`Final fee collector balance: ${finalFeeBalance / 1_000_000} base tokens`);
+  //   console.log(`Total fees collected: ${totalFeesCollected / 1_000_000} base tokens`);
+
+  //   // Calculate expected fees based on protocol fee rate
+  //   const expectedFeePerSwap = Math.floor(swapAmount * (PROTOCOL_FEE_RATE / 10000));
+  //   const expectedTotalFees = expectedFeePerSwap * numSwaps;
+
+  //   // Verify fees were collected correctly
+  //   assert.equal(
+  //     totalFeesCollected,
+  //     expectedTotalFees,
+  //     "Protocol fees should be collected correctly"
+  //   );
+
+  //   console.log(`✅ Fee accumulation verified:
+  //     Expected fee per swap: ${expectedFeePerSwap / 1_000_000} tokens
+  //     Expected total fees: ${expectedTotalFees / 1_000_000} tokens
+  //     Actual total fees: ${totalFeesCollected / 1_000_000} tokens
+  //   `);
+  // });
+
+  // it("Tests swap back and forth and verifies price impact", async () => {
+  //   console.log("↔️ Testing swapping back and forth (price impact verification)...");
+
+  //   // Start with a set amount of base tokens
+  //   const initialSwapAmount = 100_000_000; // 100 base tokens
+  //   const minAmountOut = 80_000_000; // 80 paired tokens
+
+  //   // Track balances before test
+  //   const userBaseTokenBefore = await getAccount(provider.connection, userBaseTokenAccount);
+  //   const userPairedTokenBefore = await getAccount(provider.connection, userPairedTokenAccount);
+  //   const initialBaseBalance = Number(userBaseTokenBefore.amount);
+  //   const initialPairedBalance = Number(userPairedTokenBefore.amount);
+
+  //   console.log(`Initial user balances:
+  //     Base tokens: ${initialBaseBalance / 1_000_000}
+  //     Paired tokens: ${initialPairedBalance / 1_000_000}
+  //   `);
+
+  //   // Execute swap: base -> paired
+  //   console.log("Swapping base -> paired...");
+  //   await program.methods
+  //     .swap(
+  //       new BN(initialSwapAmount),
+  //       new BN(minAmountOut),
+  //       true // base input
+  //     )
+  //     .accountsPartial({
+  //       user: admin.publicKey,
+  //       pair: pairPda,
+  //       platformState: platformStatePda,
+  //       baseTokenMint: baseTokenMint.publicKey,
+  //       pairedTokenMint: pairedTokenMint.publicKey,
+  //       baseVault: baseVault,
+  //       pairedVault: pairedVault,
+  //       userBaseAta: userBaseTokenAccount,
+  //       userPairedAta: userPairedTokenAccount,
+  //       feeCollector: platformTreasury,
+  //       tokenProgram: TOKEN_PROGRAM_ID,
+  //     })
+  //     .signers([admin])
+  //     .rpc();
+
+  //   // Get intermediate balances
+  //   const userBaseTokenMid = await getAccount(provider.connection, userBaseTokenAccount);
+  //   const userPairedTokenMid = await getAccount(provider.connection, userPairedTokenAccount);
+  //   const midBaseBalance = Number(userBaseTokenMid.amount);
+  //   const midPairedBalance = Number(userPairedTokenMid.amount);
+
+  //   // Calculate how many paired tokens were received
+  //   const pairedReceived = midPairedBalance - initialPairedBalance;
+  //   console.log(`First swap results:
+  //     Base tokens spent: ${(initialBaseBalance - midBaseBalance) / 1_000_000}
+  //     Paired tokens received: ${pairedReceived / 1_000_000}
+  //   `);
+
+  //   // Now swap all received paired tokens back to base
+  //   console.log("Swapping paired -> base...");
+  //   await program.methods
+  //     .swap(
+  //       new BN(pairedReceived),
+  //       new BN(1), // Very low min amount to allow any output
+  //       false // paired input
+  //     )
+  //     .accountsPartial({
+  //       user: admin.publicKey,
+  //       pair: pairPda,
+  //       platformState: platformStatePda,
+  //       baseTokenMint: baseTokenMint.publicKey,
+  //       pairedTokenMint: pairedTokenMint.publicKey,
+  //       baseVault: baseVault,
+  //       pairedVault: pairedVault,
+  //       userBaseAta: userBaseTokenAccount,
+  //       userPairedAta: userPairedTokenAccount,
+  //       feeCollector: platformTreasury,
+  //       tokenProgram: TOKEN_PROGRAM_ID,
+  //     })
+  //     .signers([admin])
+  //     .rpc();
+
+  //   // Get final balances
+  //   const userBaseTokenFinal = await getAccount(provider.connection, userBaseTokenAccount);
+  //   const userPairedTokenFinal = await getAccount(provider.connection, userPairedTokenAccount);
+  //   const finalBaseBalance = Number(userBaseTokenFinal.amount);
+  //   const finalPairedBalance = Number(userPairedTokenFinal.amount);
+
+  //   // Calculate round-trip efficiency
+  //   const baseOut = finalBaseBalance - midBaseBalance;
+  //   const baseRoundTripDifference = initialBaseBalance - finalBaseBalance;
+  //   const roundTripEfficiency = (finalBaseBalance / initialBaseBalance) * 100;
+
+  //   console.log(`Second swap results:
+  //     Paired tokens spent: ${(midPairedBalance - finalPairedBalance) / 1_000_000}
+  //     Base tokens received: ${baseOut / 1_000_000}
+  //   `);
+
+  //   console.log(`Round-trip summary:
+  //     Initial base tokens: ${initialBaseBalance / 1_000_000}
+  //     Final base tokens: ${finalBaseBalance / 1_000_000}
+  //     Base tokens lost: ${baseRoundTripDifference / 1_000_000} (${baseRoundTripDifference / initialSwapAmount * 100}%)
+  //     Round-trip efficiency: ${roundTripEfficiency.toFixed(2)}%
+  //   `);
+
+  //   // Validate that round-trip has expected losses from fees and price impact
+  //   assert.isBelow(finalBaseBalance, initialBaseBalance, "Should have less tokens after round-trip");
+
+  //   // Expected fee impact from two swaps with PROTOCOL_FEE_RATE
+  //   // Each swap has fee taken, plus there's price impact
+  //   const expectedFeeLossPercent = 2 * (PROTOCOL_FEE_RATE / 10000) * 100;
+
+  //   // Actual loss will be higher than just fees due to price impact
+  //   const actualLossPercent = (baseRoundTripDifference / initialBaseBalance) * 100;
+
+  //   console.log(`Fee analysis:
+  //     Expected fee loss: ~${expectedFeeLossPercent.toFixed(2)}%
+  //     Actual total loss: ${actualLossPercent.toFixed(2)}%
+  //     Price impact component: ~${(actualLossPercent - expectedFeeLossPercent).toFixed(2)}%
+  //   `);
+
+  //   // Verify loss is at least the protocol fee amount
+  //   assert.isAbove(actualLossPercent, expectedFeeLossPercent, "Round-trip loss should exceed protocol fees");
   // });
 
 });

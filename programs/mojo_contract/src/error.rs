@@ -47,4 +47,6 @@ pub enum AmmError {
     InsufficientLiquidity,
     #[msg("Math overflow occurred")]
     MathOverflow,
+    #[msg("Invalid fee collector mint")]
+    InvalidFeeCollectorMint,
 }

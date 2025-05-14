@@ -1682,133 +1682,142 @@ describe("Platform Program", () => {
     `);
   });
 
-  // it("Swaps paired token for base token successfully", async () => {
-  //   console.log("🔄 Testing paired to base token swap...");
+  it("Swaps paired token for base token successfully", async () => {
+    console.log("🔄 Testing paired to base token swap...");
 
-  //   const swapAmount = 10_000_000; // 10 tokens with 6 decimals
-  //   const minAmountOut = 9_000_000; // 9 tokens minimum (allowing for slippage)
-  //   const isBaseInput = false; // Swapping from paired to base token
+    const swapAmount = 10_000_000; // 10 tokens with 6 decimals
+    const minAmountOut = 9_000_000; // 9 tokens minimum (allowing for slippage)
+    const isBaseInput = false; // Swapping from paired to base token
 
-  //   // Get initial balances
-  //   const userBaseTokenBefore = await getAccount(
-  //     provider.connection,
-  //     userBaseTokenAccount
-  //   );
-  //   const userPairedTokenBefore = await getAccount(
-  //     provider.connection,
-  //     userPairedTokenAccount
-  //   );
-  //   const baseVaultBefore = await getAccount(
-  //     provider.connection,
-  //     baseVault
-  //   );
-  //   const pairedVaultBefore = await getAccount(
-  //     provider.connection,
-  //     pairedVault
-  //   );
-  //   const feeCollectorBefore = await getAccount(
-  //     provider.connection,
-  //     platformTreasury
-  //   );
-  //   const pairBefore = await program.account.pair.fetch(pairPda);
+    // Get initial balances
+    const userBaseTokenBefore = await getAccount(
+      provider.connection,
+      userBaseTokenAccount
+    );
+    const userPairedTokenBefore = await getAccount(
+      provider.connection,
+      userPairedTokenAccount
+    );
+    const baseVaultBefore = await getAccount(
+      provider.connection,
+      baseVault
+    );
+    const pairedVaultBefore = await getAccount(
+      provider.connection,
+      pairedVault
+    );
+    const feeCollectorBefore = await getAccount(
+      provider.connection,
+      platformTreasury
+    );
+    const pairBefore = await program.account.pair.fetch(pairPda);
 
-  //   // Execute swap
-  //   await program.methods
-  //     .swap(
-  //       new BN(swapAmount),
-  //       new BN(minAmountOut),
-  //       isBaseInput
-  //     )
-  //     .accountsPartial({
-  //       user: admin.publicKey,
-  //       pair: pairPda,
-  //       platformState: platformStatePda,
-  //       baseTokenMint: baseTokenMint.publicKey,
-  //       pairedTokenMint: pairedTokenMint.publicKey,
-  //       baseVault: baseVault,
-  //       pairedVault: pairedVault,
-  //       userBaseAta: userBaseTokenAccount,
-  //       userPairedAta: userPairedTokenAccount,
-  //       feeCollector: platformTreasury,
-  //       tokenProgram: TOKEN_PROGRAM_ID,
-  //     })
-  //     .signers([admin])
-  //     .rpc();
+    // Execute swap
+    await program.methods
+      .swap(
+        new BN(swapAmount),
+        new BN(minAmountOut),
+        isBaseInput
+      )
+      .accountsPartial({
+        user: admin.publicKey,
+        pair: pairPda,
+        platformState: platformStatePda,
+        baseTokenMint: baseTokenMint.publicKey,
+        pairedTokenMint: pairedTokenMint.publicKey,
+        baseVault: baseVault,
+        pairedVault: pairedVault,
+        userBaseAta: userBaseTokenAccount,
+        userPairedAta: userPairedTokenAccount,
+        feeCollector: platformTreasury,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([admin])
+      .rpc();
 
-  //   console.log("✅ Swap executed successfully!");
+    console.log("✅ Swap executed successfully!");
 
-  //   // Get updated balances
-  //   const userBaseTokenAfter = await getAccount(
-  //     provider.connection,
-  //     userBaseTokenAccount
-  //   );
-  //   const userPairedTokenAfter = await getAccount(
-  //     provider.connection,
-  //     userPairedTokenAccount
-  //   );
-  //   const baseVaultAfter = await getAccount(
-  //     provider.connection,
-  //     baseVault
-  //   );
-  //   const pairedVaultAfter = await getAccount(
-  //     provider.connection,
-  //     pairedVault
-  //   );
-  //   const feeCollectorAfter = await getAccount(
-  //     provider.connection,
-  //     platformTreasury
-  //   );
-  //   const pairAfter = await program.account.pair.fetch(pairPda);
+    // Get updated balances
+    const userBaseTokenAfter = await getAccount(
+      provider.connection,
+      userBaseTokenAccount
+    );
+    const userPairedTokenAfter = await getAccount(
+      provider.connection,
+      userPairedTokenAccount
+    );
+    const baseVaultAfter = await getAccount(
+      provider.connection,
+      baseVault
+    );
+    const pairedVaultAfter = await getAccount(
+      provider.connection,
+      pairedVault
+    );
+    const feeCollectorAfter = await getAccount(
+      provider.connection,
+      platformTreasury
+    );
+    const pairAfter = await program.account.pair.fetch(pairPda);
 
-  //   // Calculate expected protocol fee
-  //   const protocolFee = Math.floor(swapAmount * (PROTOCOL_FEE_RATE / 10000));
+    // Calculate user balance changes
+    const pairedTokenDiff = Number(userPairedTokenBefore.amount) - Number(userPairedTokenAfter.amount);
+    const baseTokenDiff = Number(userBaseTokenAfter.amount) - Number(userBaseTokenBefore.amount);
+    const feeCollectorDiff = Number(feeCollectorAfter.amount) - Number(feeCollectorBefore.amount);
 
-  //   // Calculate user balance changes
-  //   const pairedTokenDiff = Number(userPairedTokenBefore.amount) - Number(userPairedTokenAfter.amount);
-  //   const baseTokenDiff = Number(userBaseTokenAfter.amount) - Number(userBaseTokenBefore.amount);
+    // Calculate vault balance changes
+    const pairedVaultDiff = Number(pairedVaultAfter.amount) - Number(pairedVaultBefore.amount);
+    const baseVaultDiff = Number(baseVaultBefore.amount) - Number(baseVaultAfter.amount);
 
-  //   // Calculate vault balance changes
-  //   const pairedVaultDiff = Number(pairedVaultAfter.amount) - Number(pairedVaultBefore.amount);
-  //   const baseVaultDiff = Number(baseVaultBefore.amount) - Number(baseVaultAfter.amount);
+    // Verify user sent correct amount of paired tokens
+    assert.equal(pairedTokenDiff, swapAmount, "User should have sent the exact swap amount");
 
-  //   // Verify user sent correct amount of paired tokens
-  //   assert.equal(pairedTokenDiff, swapAmount, "User should have sent the exact swap amount");
+    // Verify user received some base tokens
+    assert.isAbove(baseTokenDiff, minAmountOut, "User should have received at least the minimum amount out");
 
-  //   // Verify user received some base tokens
-  //   assert.isAbove(baseTokenDiff, minAmountOut, "User should have received at least the minimum amount out");
+    // Verify the base vault sent the total amount (user amount + fee)
+    const grossOutput = baseTokenDiff + feeCollectorDiff;
+    assert.approximately(
+      baseVaultDiff,
+      grossOutput,
+      20000, // Tolerance for calculation differences
+      "Base vault should have sent total output amount (user amount + protocol fee)"
+    );
 
-  //   // Verify paired vault received the deposit minus fee
-  //   assert.equal(pairedVaultDiff, swapAmount - protocolFee, "Paired vault should have received the swap amount minus protocol fee");
+    // Verify paired vault receives full swapAmount (no fee taken from it)
+    assert.equal(pairedVaultDiff, swapAmount, "Paired vault should have received the full swap amount");
 
-  //   // Verify base vault sent the correct amount
-  //   assert.equal(baseVaultDiff, baseTokenDiff, "Base vault should have sent the same amount user received");
+    // Verify paired reserve increases by full swapAmount
+    assert.ok(
+      pairAfter.pairedReserve.eq(
+        pairBefore.pairedReserve.add(new BN(swapAmount))
+      ),
+      "Paired reserve should be increased by the full swap amount"
+    );
 
-  //   // Verify reserves were updated correctly
-  //   assert.ok(
-  //     pairAfter.pairedReserve.eq(
-  //       pairBefore.pairedReserve.add(new BN(swapAmount - protocolFee))
-  //     ),
-  //     "Paired reserve should be increased by swap amount minus protocol fee"
-  //   );
-  //   assert.ok(
-  //     pairAfter.baseReserve.eq(
-  //       pairBefore.baseReserve.sub(new BN(baseTokenDiff))
-  //     ),
-  //     "Base reserve should be decreased by the amount sent to user"
-  //   );
+    // Verify base reserve decreases by the gross output (user output + fees)
+    assert.ok(
+      pairAfter.baseReserve.eq(
+        pairBefore.baseReserve.sub(new BN(grossOutput))
+      ),
+      "Base reserve should be decreased by the gross output (user amount + protocol fee)"
+    );
 
-  //   // Verify total liquidity unchanged
-  //   assert.ok(
-  //     pairAfter.totalLiquidity.eq(pairBefore.totalLiquidity),
-  //     "Total liquidity should remain unchanged after swap"
-  //   );
+    // Verify total liquidity unchanged
+    assert.ok(
+      pairAfter.totalLiquidity.eq(pairBefore.totalLiquidity),
+      "Total liquidity should remain unchanged after swap"
+    );
 
-  //   console.log(`📊 Swap results:
-  //     Paired token sent by user: ${pairedTokenDiff / 1_000_000} tokens
-  //     Base token received by user: ${baseTokenDiff / 1_000_000} tokens
-  //     Protocol fee collected: ${protocolFee / 1_000_000} tokens
-  //   `);
-  // });
+    // Verify fee collector received the fee
+    assert.isAbove(feeCollectorDiff, 0, "Fee collector should have received a protocol fee");
+
+    console.log(`📊 Swap results:
+    Paired token sent by user: ${pairedTokenDiff / 1_000_000} tokens
+    Base token received by user: ${baseTokenDiff / 1_000_000} tokens
+    Protocol fee collected: ${feeCollectorDiff / 1_000_000} tokens
+  `);
+  });
 
   it("Performs large swap within slippage tolerance", async () => {
     console.log("🔄 Testing large swap with slippage tolerance...");

@@ -1,236 +1,45 @@
-// use anchor_lang::prelude::*;
-// use anchor_spl::associated_token::AssociatedToken;
-
-// use anchor_spl::token::{transfer, Transfer};
-// use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
-
-// use crate::{error::AmmError, Pair, PlatformState};
-
-// #[derive(Accounts)]
-// pub struct Swap<'info> {
-//     // Platform configuration
-//     #[account(has_one = base_token_mint)]
-//     pub platform_state: Account<'info, PlatformState>,
-
-//     #[account(
-//         mut,
-//         seeds = [b"pair", base_token_mint.key().as_ref(), paired_token_mint.key().as_ref()],
-//         bump = pair.bump,
-//         has_one = base_token_mint,
-//         has_one = paired_token_mint,
-//     )]
-//     pub pair: Account<'info, Pair>,
-
-//     pub base_token_mint: Box<InterfaceAccount<'info, Mint>>,
-//     pub paired_token_mint: Box<InterfaceAccount<'info, Mint>>,
-
-//     // Vaults
-//     #[account(
-//         mut,
-//         address = pair.base_vault,
-//         constraint = base_vault.mint == base_token_mint.key()
-//     )]
-//     pub base_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-
-//     #[account(
-//         mut,
-//         address = pair.paired_vault,
-//         constraint = paired_vault.mint == paired_token_mint.key()
-//     )]
-//     pub paired_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-
-//     // Protocol fee account (PDA-derived)
-//     #[account(
-//         mut,
-//         associated_token::mint = base_token_mint,
-//         associated_token::authority = platform_state,
-//     )]
-//     pub platform_treasury: Box<InterfaceAccount<'info, TokenAccount>>,
-
-//     // Input/Output token accounts
-//     #[account(mut)]
-//     pub base_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
-//     #[account(mut)]
-//     pub pair_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
-
-//     #[account(mut)]
-//     pub user: Signer<'info>,
-
-//     pub token_program: Interface<'info, TokenInterface>,
-//     pub system_program: Program<'info, System>,
-//     pub associated_token_program: Program<'info, AssociatedToken>,
-// }
-
-// impl<'info> Swap<'info> {
-//     pub fn swap(&mut self, input_amount: u64, min_output_amount: u64) -> Result<()> {
-//         let clock = Clock::get()?;
-//         let pair = &mut self.pair;
-//         let base_token_mint = pair.base_token_mint;
-
-//         // 1. Validation checks
-//         require!(input_amount > 0, AmmError::ZeroAmount);
-//         require!(!self.platform_state.is_paused, AmmError::TradingPaused);
-//         // require!(platform_state.protocol_fee_ratio <= 10000, AmmError::InvalidFeeConfig);
-//         require!(
-//             clock.unix_timestamp - pair.last_swap_time > 1,
-//             AmmError::SwapCooldown
-//         );
-
-//         // 2. Determine swap direction and reserves
-//         let is_base_input = self.base_token_account.mint == base_token_mint;
-//         let input_reserve = if is_base_input {
-//             pair.base_reserve
-//         } else {
-//             pair.paired_reserve
-//         };
-//         let output_reserve = if is_base_input {
-//             pair.paired_reserve
-//         } else {
-//             pair.base_reserve
-//         };
-
-//         // 3. Calculate fees
-//         let total_fee = input_amount
-//             .checked_mul(self.platform_state.protocol_fee_rate as u64)
-//             .ok_or(AmmError::MathError)?
-//             .checked_div(10000)
-//             .ok_or(AmmError::MathError)?;
-
-//         let protocol_fee = total_fee
-//             .checked_mul(self.platform_state.protocol_fee_rate as u64)
-//             .ok_or(AmmError::MathError)?
-//             .checked_div(10000)
-//             .ok_or(AmmError::MathError)?;
-
-//         let liquidity_fee = total_fee
-//             .checked_sub(protocol_fee)
-//             .ok_or(AmmError::MathError)?;
-
-//         let input_amount_after_fee = input_amount
-//             .checked_sub(total_fee)
-//             .ok_or(AmmError::MathError)?;
-
-//         // 4. Calculate output using x*y=k formula
-//         let numerator = input_amount_after_fee
-//             .checked_mul(output_reserve)
-//             .ok_or(AmmError::MathError)?;
-
-//         let denominator = input_reserve
-//             .checked_add(input_amount_after_fee)
-//             .ok_or(AmmError::MathError)?;
-
-//         let output_amount = numerator
-//             .checked_div(denominator)
-//             .ok_or(AmmError::MathError)?;
-
-//         // 5. Slippage protection
-//         require!(
-//             output_amount >= min_output_amount,
-//             AmmError::SlippageExceeded
-//         );
-
-//         // 6. Update reserves with liquidity fee
-//         let new_input_reserve = input_reserve
-//             .checked_add(
-//                 input_amount_after_fee
-//                     .checked_add(liquidity_fee)
-//                     .ok_or(AmmError::MathError)?,
-//             )
-//             .ok_or(AmmError::MathError)?;
-//         let new_output_reserve = output_reserve
-//             .checked_sub(output_amount)
-//             .ok_or(AmmError::MathError)?;
-
-//         if is_base_input {
-//             pair.base_reserve = new_input_reserve;
-//             pair.paired_reserve = new_output_reserve;
-//         } else {
-//             pair.paired_reserve = new_input_reserve;
-//             pair.base_reserve = new_output_reserve;
-//         }
-
-//         // Transfer input tokens from user to vault
-//         let transfer_input_ctx = CpiContext::new(
-//             self.token_program.to_account_info(),
-//             Transfer {
-//                 from: self.base_token_account.to_account_info(),
-//                 to: if is_base_input {
-//                     self.base_vault.to_account_info()
-//                 } else {
-//                     self.paired_vault.to_account_info()
-//                 },
-//                 authority: self.user.to_account_info(),
-//             },
-//         );
-//         transfer(transfer_input_ctx, input_amount)?;
-
-//         // Transfer protocol fee to protocol's account
-//         let signer_seeds: &[&[&[u8]]] = &[&[
-//             b"pair",
-//             pair.base_token_mint.as_ref(),
-//             pair.paired_token_mint.as_ref(),
-//             &[pair.bump],
-//         ]];
-
-//         let protocol_fee_transfer_ctx = CpiContext::new_with_signer(
-//             self.token_program.to_account_info(),
-//             Transfer {
-//                 from: if is_base_input {
-//                     self.paired_vault.to_account_info()
-//                 } else {
-//                     self.base_vault.to_account_info()
-//                 },
-//                 to: self.platform_treasury.to_account_info(),
-//                 authority: pair.to_account_info(),
-//             },
-//             signer_seeds,
-//         );
-//         transfer(protocol_fee_transfer_ctx, protocol_fee)?;
-
-//         // Transfer output tokens to user
-//         let output_transfer_ctx = CpiContext::new_with_signer(
-//             self.token_program.to_account_info(),
-//             Transfer {
-//                 from: if is_base_input {
-//                     self.base_vault.to_account_info()
-//                 } else {
-//                     self.paired_vault.to_account_info()
-//                 },
-//                 to: self.pair_token_account.to_account_info(),
-//                 authority: pair.to_account_info(),
-//             },
-//             signer_seeds,
-//         );
-//         transfer(output_transfer_ctx, output_amount)?;
-
-//         Ok(())
-//     }
-// }
-
+//NEW SWAP FUNCTION
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::AssociatedToken;
-
-use anchor_spl::token::{transfer, Transfer};
-use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    token::{transfer, Transfer},
+    token_interface::{Mint, TokenAccount, TokenInterface},
+};
 
 use crate::{error::AmmError, Pair, PlatformState};
 
 #[derive(Accounts)]
 pub struct Swap<'info> {
-    // Platform configuration
+    /// The platform state contains global configuration
+    #[account(
+        seeds = [b"platform-state"],
+        bump = platform_state.bump,
+        constraint = !platform_state.is_paused @ AmmError::TradingPaused,
+    )]
     pub platform_state: Account<'info, PlatformState>,
 
+    /// The user performing the swap
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    /// The pair (pool) being swapped with
     #[account(
         mut,
         seeds = [b"pair", pair.base_token_mint.as_ref(), pair.paired_token_mint.as_ref()],
         bump = pair.bump,
+        has_one = base_vault,
+        has_one = paired_vault,
+        constraint = pair.total_liquidity > 0 @ AmmError::InsufficientLiquidity,
     )]
     pub pair: Account<'info, Pair>,
 
+    /// Base token mint (MOJO)
     pub base_token_mint: Box<InterfaceAccount<'info, Mint>>,
+
+    /// Paired token mint
     pub paired_token_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    // Vaults
+    /// Vault holding base tokens (MOJO)
     #[account(
         mut,
         address = pair.base_vault,
@@ -238,6 +47,7 @@ pub struct Swap<'info> {
     )]
     pub base_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
+    /// Vault holding paired tokens
     #[account(
         mut,
         address = pair.paired_vault,
@@ -245,185 +55,252 @@ pub struct Swap<'info> {
     )]
     pub paired_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    // Protocol fee account (PDA-derived)
+    /// User's base token (MOJO) account
     #[account(
         mut,
-        associated_token::mint = platform_state.base_token_mint,
-        associated_token::authority = platform_state,
+        associated_token::mint = base_token_mint,
+        associated_token::authority = user,
     )]
-    pub platform_treasury: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub user_base_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    // Input/Output token accounts
-    #[account(mut)]
-    pub base_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut)]
-    pub pair_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// User's paired token account
+    #[account(
+        mut,
+        associated_token::mint = paired_token_mint,
+        associated_token::authority = user,
+    )]
+    pub user_paired_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(mut)]
-    pub user: Signer<'info>,
+    /// Platform fee collector account
+    #[account(
+        mut,
+        address = platform_state.fee_collector,
+    )]
+    pub fee_collector: Box<InterfaceAccount<'info, TokenAccount>>,
 
     pub token_program: Interface<'info, TokenInterface>,
-    pub system_program: Program<'info, System>,
     pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
 }
 
 impl<'info> Swap<'info> {
-    pub fn swap(&mut self, input_amount: u64, min_output_amount: u64) -> Result<()> {
-        let clock = Clock::get()?;
-        let pair = &mut self.pair;
-
-        // 1. Validation checks
-        require!(input_amount > 0, AmmError::ZeroAmount);
+    pub fn swap(&mut self, amount_in: u64, min_amount_out: u64, is_base_input: bool) -> Result<()> {
+        require!(
+            self.pair.total_liquidity > 0,
+            AmmError::InsufficientLiquidity
+        );
+        require!(amount_in > 0, AmmError::ZeroAmount);
         require!(!self.platform_state.is_paused, AmmError::TradingPaused);
 
-        // For test environments, we can make the cooldown more lenient
-        // Comment this out for testing or modify as needed
-        // require!(
-        //     clock.unix_timestamp - pair.last_swap_time > 1,
-        //     AmmError::SwapCooldown
-        // );
+        let clock = Clock::get()?;
+        self.pair.last_swap_time = clock.unix_timestamp;
 
-        // 2. Determine swap direction and reserves
-        let is_base_input = self.base_token_account.mint == pair.base_token_mint;
+        let base_reserve = self.pair.base_reserve;
+        let paired_reserve = self.pair.paired_reserve;
 
-        let (input_vault, output_vault) = if is_base_input {
-            (&self.base_vault, &self.paired_vault)
-        } else {
-            (&self.paired_vault, &self.base_vault)
-        };
-
-        let input_reserve = if is_base_input {
-            pair.base_reserve
-        } else {
-            pair.paired_reserve
-        };
-
-        let output_reserve = if is_base_input {
-            pair.paired_reserve
-        } else {
-            pair.base_reserve
-        };
-
-        // 3. Calculate fees
-        let total_fee = input_amount
-            .checked_mul(self.platform_state.protocol_fee_rate as u64)
-            .ok_or(AmmError::MathError)?
-            .checked_div(10000)
-            .ok_or(AmmError::MathError)?;
-
-        let protocol_fee = total_fee
-            .checked_mul(self.platform_state.protocol_fee_rate as u64)
-            .ok_or(AmmError::MathError)?
-            .checked_div(10000)
-            .ok_or(AmmError::MathError)?;
-
-        let liquidity_fee = total_fee
-            .checked_sub(protocol_fee)
-            .ok_or(AmmError::MathError)?;
-
-        let input_amount_after_fee = input_amount
-            .checked_sub(total_fee)
-            .ok_or(AmmError::MathError)?;
-
-        // 4. Calculate output using x*y=k formula
-        let numerator = input_amount_after_fee
-            .checked_mul(output_reserve)
-            .ok_or(AmmError::MathError)?;
-
-        let denominator = input_reserve
-            .checked_add(input_amount_after_fee)
-            .ok_or(AmmError::MathError)?;
-
-        let output_amount = numerator
-            .checked_div(denominator)
-            .ok_or(AmmError::MathError)?;
-
-        // 5. Slippage protection
-        require!(
-            output_amount >= min_output_amount,
-            AmmError::SlippageExceeded
-        );
-
-        // 6. Update reserves with liquidity fee
-        let new_input_reserve = input_reserve
-            .checked_add(
-                input_amount_after_fee
-                    .checked_add(liquidity_fee)
-                    .ok_or(AmmError::MathError)?,
+        let (
+            input_reserve,
+            output_reserve,
+            input_vault,
+            output_vault,
+            input_account,
+            output_account,
+        ) = if is_base_input {
+            (
+                base_reserve,
+                paired_reserve,
+                &self.base_vault,
+                &self.paired_vault,
+                &self.user_base_ata,
+                &self.user_paired_ata,
             )
-            .ok_or(AmmError::MathError)?;
-        let new_output_reserve = output_reserve
-            .checked_sub(output_amount)
-            .ok_or(AmmError::MathError)?;
+        } else {
+            (
+                paired_reserve,
+                base_reserve,
+                &self.paired_vault,
+                &self.base_vault,
+                &self.user_paired_ata,
+                &self.user_base_ata,
+            )
+        };
 
+        // --- MOJO -> Paired Token swap ---
         if is_base_input {
-            pair.base_reserve = new_input_reserve;
-            pair.paired_reserve = new_output_reserve;
-        } else {
-            pair.paired_reserve = new_input_reserve;
-            pair.base_reserve = new_output_reserve;
+            let protocol_fee = amount_in
+                .checked_mul(self.platform_state.protocol_fee_rate as u64)
+                .ok_or(AmmError::MathOverflow)?
+                .checked_div(10_000)
+                .ok_or(AmmError::MathOverflow)?;
+
+            let amount_in_after_fee = amount_in
+                .checked_sub(protocol_fee)
+                .ok_or(AmmError::MathOverflow)?;
+
+            let k = (input_reserve as u128)
+                .checked_mul(output_reserve as u128)
+                .ok_or(AmmError::MathOverflow)?;
+
+            let new_input_reserve = (input_reserve as u128)
+                .checked_add(amount_in_after_fee as u128)
+                .ok_or(AmmError::MathOverflow)?;
+
+            let new_output_reserve = k
+                .checked_div(new_input_reserve)
+                .ok_or(AmmError::MathOverflow)?;
+
+            let output_amount = (output_reserve as u128)
+                .checked_sub(new_output_reserve)
+                .ok_or(AmmError::MathOverflow)? as u64;
+
+            require!(output_amount >= min_amount_out, AmmError::SlippageExceeded);
+
+            // Transfer input MOJO from user → base_vault
+            transfer(
+                CpiContext::new(
+                    self.token_program.to_account_info(),
+                    Transfer {
+                        from: input_account.to_account_info(),
+                        to: input_vault.to_account_info(),
+                        authority: self.user.to_account_info(),
+                    },
+                ),
+                amount_in,
+            )?;
+
+            // Transfer output tokens from vault → user
+            let signer_seeds = &[
+                b"pair",
+                self.pair.base_token_mint.as_ref(),
+                self.pair.paired_token_mint.as_ref(),
+                &[self.pair.bump],
+            ];
+            transfer(
+                CpiContext::new_with_signer(
+                    self.token_program.to_account_info(),
+                    Transfer {
+                        from: output_vault.to_account_info(),
+                        to: output_account.to_account_info(),
+                        authority: self.pair.to_account_info(),
+                    },
+                    &[signer_seeds],
+                ),
+                output_amount,
+            )?;
+
+            // Transfer MOJO fee to fee_collector
+            if protocol_fee > 0 {
+                transfer(
+                    CpiContext::new_with_signer(
+                        self.token_program.to_account_info(),
+                        Transfer {
+                            from: input_vault.to_account_info(),
+                            to: self.fee_collector.to_account_info(),
+                            authority: self.pair.to_account_info(),
+                        },
+                        &[signer_seeds],
+                    ),
+                    protocol_fee,
+                )?;
+            }
+
+            self.pair.base_reserve = base_reserve
+                .checked_add(amount_in_after_fee)
+                .ok_or(AmmError::MathOverflow)?;
+            self.pair.paired_reserve = paired_reserve
+                .checked_sub(output_amount)
+                .ok_or(AmmError::MathOverflow)?;
         }
+        // --- Paired Token -> MOJO swap ---
+        else {
+            let k = (input_reserve as u128)
+                .checked_mul(output_reserve as u128)
+                .ok_or(AmmError::MathOverflow)?;
 
-        // Record last swap time
-        pair.last_swap_time = clock.unix_timestamp;
+            let new_input_reserve = (input_reserve as u128)
+                .checked_add(amount_in as u128)
+                .ok_or(AmmError::MathOverflow)?;
 
-        // Transfer input tokens from user to vault
-        let from_account = if is_base_input {
-            self.base_token_account.to_account_info()
-        } else {
-            self.pair_token_account.to_account_info()
-        };
+            let new_output_reserve = k
+                .checked_div(new_input_reserve)
+                .ok_or(AmmError::MathOverflow)?;
 
-        let transfer_input_ctx = CpiContext::new(
-            self.token_program.to_account_info(),
-            Transfer {
-                from: from_account,
-                to: input_vault.to_account_info(),
-                authority: self.user.to_account_info(),
-            },
-        );
-        transfer(transfer_input_ctx, input_amount)?;
+            let gross_output_amount = (output_reserve as u128)
+                .checked_sub(new_output_reserve)
+                .ok_or(AmmError::MathOverflow)? as u64;
 
-        // Calculate protocol fee collector
-        let signer_seeds: &[&[&[u8]]] = &[&[
-            b"pair",
-            pair.base_token_mint.as_ref(),
-            pair.paired_token_mint.as_ref(),
-            &[pair.bump],
-        ]];
+            let protocol_fee = gross_output_amount
+                .checked_mul(self.platform_state.protocol_fee_rate as u64)
+                .ok_or(AmmError::MathOverflow)?
+                .checked_div(10_000)
+                .ok_or(AmmError::MathOverflow)?;
 
-        // Only transfer protocol fee if it's > 0
-        if protocol_fee > 0 {
-            // Transfer protocol fee to protocol's account
-            let protocol_fee_transfer_ctx = CpiContext::new_with_signer(
-                self.token_program.to_account_info(),
-                Transfer {
-                    from: input_vault.to_account_info(),
-                    to: self.platform_treasury.to_account_info(),
-                    authority: pair.to_account_info(),
-                },
-                signer_seeds,
+            let amount_out_after_fee = gross_output_amount
+                .checked_sub(protocol_fee)
+                .ok_or(AmmError::MathOverflow)?;
+
+            require!(
+                amount_out_after_fee >= min_amount_out,
+                AmmError::SlippageExceeded
             );
-            transfer(protocol_fee_transfer_ctx, protocol_fee)?;
+
+            // Transfer input paired token from user → paired_vault
+            transfer(
+                CpiContext::new(
+                    self.token_program.to_account_info(),
+                    Transfer {
+                        from: input_account.to_account_info(),
+                        to: input_vault.to_account_info(),
+                        authority: self.user.to_account_info(),
+                    },
+                ),
+                amount_in,
+            )?;
+
+            let signer_seeds = &[
+                b"pair",
+                self.pair.base_token_mint.as_ref(),
+                self.pair.paired_token_mint.as_ref(),
+                &[self.pair.bump],
+            ];
+
+            // Transfer MOJO to user (minus fee)
+            transfer(
+                CpiContext::new_with_signer(
+                    self.token_program.to_account_info(),
+                    Transfer {
+                        from: output_vault.to_account_info(),
+                        to: output_account.to_account_info(),
+                        authority: self.pair.to_account_info(),
+                    },
+                    &[signer_seeds],
+                ),
+                amount_out_after_fee,
+            )?;
+
+            // Transfer MOJO fee to fee_collector
+            if protocol_fee > 0 {
+                transfer(
+                    CpiContext::new_with_signer(
+                        self.token_program.to_account_info(),
+                        Transfer {
+                            from: output_vault.to_account_info(),
+                            to: self.fee_collector.to_account_info(),
+                            authority: self.pair.to_account_info(),
+                        },
+                        &[signer_seeds],
+                    ),
+                    protocol_fee,
+                )?;
+            }
+
+            self.pair.paired_reserve = paired_reserve
+                .checked_add(amount_in)
+                .ok_or(AmmError::MathOverflow)?;
+            self.pair.base_reserve = base_reserve
+                .checked_sub(gross_output_amount)
+                .ok_or(AmmError::MathOverflow)?;
         }
-
-        // Transfer output tokens to user
-        let to_account = if is_base_input {
-            self.pair_token_account.to_account_info()
-        } else {
-            self.base_token_account.to_account_info()
-        };
-
-        let output_transfer_ctx = CpiContext::new_with_signer(
-            self.token_program.to_account_info(),
-            Transfer {
-                from: output_vault.to_account_info(),
-                to: to_account,
-                authority: pair.to_account_info(),
-            },
-            signer_seeds,
-        );
-        transfer(output_transfer_ctx, output_amount)?;
 
         Ok(())
     }

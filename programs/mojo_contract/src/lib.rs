@@ -15,8 +15,14 @@ declare_id!("AMGoaF1FYy6qijdYnLwqQmpxe7eQTVwAy2SvTQbHQcER");
 pub mod mojo_contract {
     use super::*;
 
-    pub fn swap(ctx: Context<Swap>, input_amount: u64, min_output_amount: u64) -> Result<()> {
-        ctx.accounts.swap(input_amount, min_output_amount)?;
+    pub fn swap(
+        ctx: Context<Swap>,
+        input_amount: u64,
+        min_output_amount: u64,
+        is_base_input: bool,
+    ) -> Result<()> {
+        ctx.accounts
+            .swap(input_amount, min_output_amount, is_base_input)?;
         Ok(())
     }
 

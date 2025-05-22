@@ -28,10 +28,10 @@ pub mod mojo_contract {
 
     pub fn initialize_platform(
         ctx: Context<InitializePlatform>,
-        protocol_fee_rate: u16,
+        platform_fee_bps: u16,
     ) -> Result<()> {
         ctx.accounts
-            .initialize_platform(protocol_fee_rate, &ctx.bumps)
+            .initialize_platform(platform_fee_bps, &ctx.bumps)
     }
 
     pub fn pause_platform(ctx: Context<PausePlatform>, pause: bool) -> Result<()> {

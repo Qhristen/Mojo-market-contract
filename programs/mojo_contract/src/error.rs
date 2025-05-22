@@ -26,6 +26,9 @@ pub enum AmmError {
     #[msg("Invalid paired token")]
     InvalidPairedToken,
 
+    #[msg("Invalid fee collector account")]
+    InvalidFeeCollector,
+
     #[msg("Unauthorized access")]
     Unauthorized,
 

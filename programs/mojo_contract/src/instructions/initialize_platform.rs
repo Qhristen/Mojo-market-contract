@@ -5,7 +5,7 @@ use anchor_spl::{
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 
-use crate::state::PlatformState;
+use crate::{error::AmmError, state::PlatformState, PlatformInitialized, PlatformSecurity, PlatformStats};
 
 #[derive(Accounts)]
 pub struct InitializePlatform<'info> {
@@ -21,16 +21,14 @@ pub struct InitializePlatform<'info> {
         seeds = [b"platform-state"],
         bump
     )]
-    pub platform_state: Account<'info, PlatformState>,
+    pub platform: Account<'info, PlatformState>,
 
-    // Treasury/fee collector ATA
+    /// Protocol fee collector (must be base token account)
     #[account(
-        init,
-        payer = admin,
-        associated_token::mint = base_token_mint,
-        associated_token::authority = platform_state,
+        mut,
+        constraint = fee_collector.owner == platform.key() @ AmmError::InvalidFeeCollector
     )]
-    pub platform_treasury: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub fee_collector: InterfaceAccount<'info, TokenAccount>,
 
     pub system_program: Program<'info, System>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -38,18 +36,39 @@ pub struct InitializePlatform<'info> {
 }
 
 impl<'info> InitializePlatform<'info> {
-    pub fn initialize_platform(
-        &mut self,
-        protocol_fee_rate: u16,
-        bumps: &InitializePlatformBumps,
-    ) -> Result<()> {
-        self.platform_state.set_inner(PlatformState {
+    pub fn initialize_platform(&mut self,platform_fee_bps: u16, bumps: &InitializePlatformBumps) -> Result<()> {
+        let clock = Clock::get()?;
+
+        self.platform.set_inner(PlatformState {
             base_token_mint: self.base_token_mint.key(),
             admin: self.admin.key(),
-            fee_collector: self.platform_treasury.key(),
-            is_paused: false,
-            protocol_fee_rate,
-            bump: bumps.platform_state,
+            platform_fee_bps,
+            fee_collector: self.fee_collector.key(),
+            dao_config: None,
+            security: PlatformSecurity {
+                is_paused: false,
+                last_pause_time: clock.unix_timestamp,
+                pause_count: 0,
+            },
+            stats: PlatformStats {
+                pair_count: 0,
+                total_volume: 0,
+                total_fees: 0,
+            },
+            bump: bumps.platform,
+            version: 1,
+        });
+
+         // Validate fee collector account
+        require!(
+            self.fee_collector.mint == self.base_token_mint.key(),
+            AmmError::InvalidFeeCollector
+        );
+
+        emit!(PlatformInitialized {
+            timestamp: clock.unix_timestamp,
+            admin: self.admin.key(),
+            base_token: self.base_token_mint.key(),
         });
         Ok(())
     }

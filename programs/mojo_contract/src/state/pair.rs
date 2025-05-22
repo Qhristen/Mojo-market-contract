@@ -1,17 +1,36 @@
 use anchor_lang::prelude::*;
 
+use super::PairMeta;
+
 #[account]
 #[derive(InitSpace)]
 pub struct Pair {
-    pub base_token_mint: Pubkey,    // MOJO mint
-    pub paired_token_mint: Pubkey,  // Player token mint
-    pub lp_mint: Pubkey,      // LP token mint
-    pub base_reserve: u64,    // MOJO reserves
-    pub paired_reserve: u64,  // Player token reserves
-    pub total_liquidity: u64, // Total LP tokens minted
+    pub meta: PairMeta,
+    pub reserves: Reserves,
+    pub vaults: Vaults,
+    pub created_by: Creator,          // DAO or Admin
+    pub created_at: i64,
     pub bump: u8,
-    pub last_swap_time: i64,
-    // pub protocol_fee_rate: u16, // Swap fee (e.g., 30 = 0.3%)
-    pub base_vault: Pubkey,
-    pub paired_vault: Pubkey,
+}
+
+#[derive(InitSpace, AnchorSerialize, AnchorDeserialize, Clone, PartialEq)]
+pub enum Creator {
+    DaoProposal(Pubkey),  // Proposal that created this pair
+    Admin,                // Created directly by admin
+}
+
+
+#[account]
+#[derive(InitSpace)]
+pub struct Reserves {
+    pub base: u64,
+    pub paired: u64,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Vaults {
+    pub base: Pubkey,
+    pub paired: Pubkey,
+    pub lp_mint: Pubkey,
 }
